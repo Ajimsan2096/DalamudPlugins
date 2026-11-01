@@ -142,10 +142,17 @@ public sealed class SetupWizard : Window
                               "no charge). Then Account > \"API Keys & Limits\". Free keys end in \":fx\".");
             if (ImGui.Button("Copy deepl.com/pro-api to clipboard"))
                 ImGui.SetClipboardText("https://www.deepl.com/pro-api");
-            var key = cfg.DeepLApiKey;
+            var key = cfg.DeepLApiKeys.Count > 0 ? cfg.DeepLApiKeys[0] : string.Empty;
             ImGui.SetNextItemWidth(-1);
             if (ImGui.InputTextWithHint("##wkey", "Paste your DeepL API key here", ref key, 128, ImGuiInputTextFlags.Password))
-                cfg.DeepLApiKey = key.Trim();
+            {
+                if (cfg.DeepLApiKeys.Count == 0)
+                    cfg.DeepLApiKeys.Add(key.Trim());
+                else
+                    cfg.DeepLApiKeys[0] = key.Trim();
+                plugin.Translator.DeepL.ResetKeyStates();
+            }
+            ImGui.TextDisabled("You can add more keys later in /lb config > Engine.");
             var fb = cfg.FallbackToGoogle;
             if (ImGui.Checkbox("Use Google automatically if DeepL fails or runs out", ref fb))
                 cfg.FallbackToGoogle = fb;

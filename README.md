@@ -27,7 +27,7 @@ Repositorio personal de plugins de Dalamud para FFXIV.
 - **Ventana** (`/lb`): historial con botón **Reply** (responde traducido en el mismo canal o tell), cuadro para escribir con **Preview** + retrotraducción ("Means: …") para comprobar el sentido antes de enviar.
 - **Party Finder**: clic derecho en un anuncio → *Translate description*.
 - **Barra de servidor** (arriba a la derecha): `LB EN/FR` — clic izquierdo activa/desactiva, clic derecho abre la ventana.
-- **Motores**: DeepL (la mejor calidad para EN/FR, clave gratuita de 500.000 caracteres/mes en deepl.com → API Free) con paso automático a Google si DeepL falla; o Google directamente (sin clave).
+- **Motores**: DeepL (la mejor calidad para EN/FR, clave gratuita de 500.000 caracteres/mes en deepl.com → API Free) admite **varias claves**: si una agota su cuota mensual (o no es válida) se usa la siguiente para el mismo mensaje, y solo cuando fallan todas pasa automáticamente a Google; o Google directamente (sin clave).
 - Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/tr`.
 
 ## Desarrollo

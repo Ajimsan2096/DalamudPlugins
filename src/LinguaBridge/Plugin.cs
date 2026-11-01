@@ -66,7 +66,10 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Translator = new TranslationService(() => Configuration);
+        if (Configuration.Migrate())
+            PluginInterface.SavePluginConfig(Configuration);
         Translator.FallbackUsed += OnFallbackUsed;
+        Translator.DeepL.KeyUnavailable += OnDeepLKeyUnavailable;
 
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
@@ -111,6 +114,7 @@ public sealed partial class Plugin : IDalamudPlugin
         dtrEntry?.Remove();
         windowSystem.RemoveAllWindows();
         Translator.FallbackUsed -= OnFallbackUsed;
+        Translator.DeepL.KeyUnavailable -= OnDeepLKeyUnavailable;
         Translator.Dispose();
     }
 
@@ -421,6 +425,13 @@ public sealed partial class Plugin : IDalamudPlugin
         lastFallbackPrinted = DateTime.Now;
         _ = Framework.RunOnFrameworkThread(() =>
             ChatGui.PrintError($"{reason}. Using Google until DeepL works again.", Tag));
+    }
+
+    private void OnDeepLKeyUnavailable(int index, string reason)
+    {
+        var next = index + 2 <= Translator.DeepL.Keys.Count ? $"trying key #{index + 2}" : "trying the remaining keys";
+        _ = Framework.RunOnFrameworkThread(() =>
+            ChatGui.Print($"DeepL key #{index + 1}: {reason}, {next}.", Tag));
     }
 
     private void ReportError(Exception ex, bool force)

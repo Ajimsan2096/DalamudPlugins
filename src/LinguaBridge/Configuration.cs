@@ -14,7 +14,10 @@ public sealed class Configuration : IPluginConfiguration
 
     // --- Engine ---
     public TranslationEngine Engine { get; set; } = TranslationEngine.Google;
+    /// <summary>Legacy single key (v1.0-1.1); migrated into <see cref="DeepLApiKeys"/> on load.</summary>
     public string DeepLApiKey { get; set; } = string.Empty;
+    /// <summary>DeepL keys in order of use; the next one is tried when one runs out of quota.</summary>
+    public List<string> DeepLApiKeys { get; set; } = new();
     /// <summary>"default", "prefer_less" (tu) or "prefer_more" (vous).</summary>
     public string DeepLFormality { get; set; } = "prefer_less";
     /// <summary>DeepL target variant for English: "EN-US" or "EN-GB".</summary>
@@ -71,4 +74,23 @@ public sealed class Configuration : IPluginConfiguration
     public bool ShowDtrEntry { get; set; } = true;
     /// <summary>Add "Translate" to the Party Finder listing context menu.</summary>
     public bool PartyFinderMenu { get; set; } = true;
+
+    /// <summary>Moves settings from older versions into their current shape. Returns true if anything changed.</summary>
+    public bool Migrate()
+    {
+        var changed = false;
+        if (!string.IsNullOrWhiteSpace(DeepLApiKey))
+        {
+            if (!DeepLApiKeys.Contains(DeepLApiKey.Trim()))
+                DeepLApiKeys.Insert(0, DeepLApiKey.Trim());
+            DeepLApiKey = string.Empty;
+            changed = true;
+        }
+        if (Version < 2)
+        {
+            Version = 2;
+            changed = true;
+        }
+        return changed;
+    }
 }

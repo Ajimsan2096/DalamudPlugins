@@ -39,7 +39,8 @@ public sealed class ConfigWindow : Window
 
     private readonly Plugin plugin;
     private bool showKey;
-    private string usage = string.Empty;
+    private string newKey = string.Empty;
+    private bool checkingUsage;
     private string whitelistText;
     private string protectedText;
 
@@ -85,30 +86,95 @@ public sealed class ConfigWindow : Window
         if (cfg.Engine == TranslationEngine.DeepL)
         {
             ImGui.Spacing();
-            ImGui.TextUnformatted("DeepL API key");
-            var key = cfg.DeepLApiKey;
-            ImGui.SetNextItemWidth(-90);
-            if (ImGui.InputText("##key", ref key, 128, showKey ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.Password))
+            ImGui.TextUnformatted("DeepL API keys");
+            ImGuiComponents.HelpMarker("Keys are used in order. When one runs out of its monthly quota (or is invalid), the " +
+                                       "next one is used automatically for the same message. Google is only used when " +
+                                       "all keys fail (if the fallback below is on).");
+
+            var deepl = plugin.Translator.DeepL;
+            var keys = cfg.DeepLApiKeys;
+            var remove = -1;
+            var moveUp = -1;
+            using (var table = ImRaii.Table("keys", 3, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp))
             {
-                cfg.DeepLApiKey = key.Trim();
+                if (table)
+                {
+                    ImGui.TableSetupColumn("key", ImGuiTableColumnFlags.WidthFixed, 190);
+                    ImGui.TableSetupColumn("status", ImGuiTableColumnFlags.WidthStretch);
+                    ImGui.TableSetupColumn("actions", ImGuiTableColumnFlags.WidthFixed, 70);
+                    for (var i = 0; i < keys.Count; i++)
+                    {
+                        using var id = ImRaii.PushId(i);
+                        ImGui.TableNextRow();
+                        ImGui.TableNextColumn();
+                        ImGui.TextUnformatted($"#{i + 1}  {(showKey ? keys[i] : DeepLTranslator.Mask(keys[i]))}");
+                        ImGui.TableNextColumn();
+                        ImGui.TextDisabled(deepl.Describe(keys[i]));
+                        ImGui.TableNextColumn();
+                        using (ImRaii.Disabled(i == 0))
+                        {
+                            if (ImGui.SmallButton("Up"))
+                                moveUp = i;
+                        }
+                        ImGui.SameLine();
+                        if (ImGui.SmallButton("X"))
+                            remove = i;
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Remove this key");
+                    }
+                }
+            }
+            if (keys.Count == 0)
+                ImGui.TextColored(new Vector4(1, 0.7f, 0.3f, 1), "No key yet: translations use Google until you add one.");
+            if (remove >= 0)
+            {
+                keys.RemoveAt(remove);
+                deepl.ResetKeyStates();
                 changed = true;
+            }
+            if (moveUp > 0)
+            {
+                (keys[moveUp - 1], keys[moveUp]) = (keys[moveUp], keys[moveUp - 1]);
+                deepl.ResetKeyStates();
+                changed = true;
+            }
+
+            ImGui.SetNextItemWidth(-150);
+            ImGui.InputTextWithHint("##newkey", "Paste a DeepL API key (ends in :fx for Free)", ref newKey, 128,
+                                    showKey ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.Password);
+            ImGui.SameLine();
+            using (ImRaii.Disabled(string.IsNullOrWhiteSpace(newKey)))
+            {
+                if (ImGui.Button("Add key"))
+                {
+                    var k = newKey.Trim();
+                    if (!keys.Contains(k))
+                        keys.Add(k);
+                    newKey = string.Empty;
+                    deepl.ResetKeyStates();
+                    changed = true;
+                    _ = deepl.GetUsageAsync(k, default); // show status/usage right away
+                }
             }
             ImGui.SameLine();
             ImGui.Checkbox("Show", ref showKey);
-            ImGui.TextWrapped("Free plan: 500,000 characters/month. Create an account at deepl.com > API > \"DeepL API Free\", " +
-                              "then copy the key from your account page (free keys end in \":fx\"). The key is stored in plain " +
-                              "text in your Dalamud plugin config folder.");
 
-            if (ImGui.Button("Check usage"))
+            using (ImRaii.Disabled(checkingUsage || keys.Count == 0))
             {
-                usage = "Checking...";
-                _ = plugin.Translator.DeepL.GetUsageAsync(default).ContinueWith(t =>
-                    usage = t.IsCompletedSuccessfully
-                        ? $"{t.Result.Used:N0} / {t.Result.Limit:N0} characters used this month"
-                        : t.Exception?.GetBaseException().Message ?? "Error");
+                if (ImGui.Button("Check usage of all keys"))
+                {
+                    checkingUsage = true;
+                    _ = deepl.RefreshAllUsageAsync(default).ContinueWith(_ => checkingUsage = false);
+                }
             }
             ImGui.SameLine();
-            ImGui.TextUnformatted(usage);
+            if (ImGui.Button("Retry used-up keys"))
+                deepl.ResetKeyStates();
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Keys that ran out are skipped for a few hours. Use this after your monthly quota resets.");
+
+            ImGui.TextWrapped("Free plan: 500,000 characters/month per account (deepl.com > API > \"DeepL API Free\"). " +
+                              "Keys are stored in plain text in your Dalamud plugin config folder.");
 
             ImGui.Spacing();
             var f = Array.FindIndex(Formalities, x => x.Value == cfg.DeepLFormality);
