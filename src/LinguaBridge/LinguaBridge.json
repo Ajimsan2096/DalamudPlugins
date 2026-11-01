@@ -1,0 +1,9 @@
+{
+  "Author": "AdrianJimenezSantiago",
+  "Name": "LinguaBridge",
+  "Punchline": "Real-time chat translation between two languages (EN <-> FR by default).",
+  "Description": "Translates incoming chat messages between two languages (English <-> French by default) using DeepL (best quality, free API key) or Google Translate (no key). Use /tr to translate and send your own messages, e.g. /tr /p Hello everyone!",
+  "Tags": ["chat", "translation", "translate", "deepl", "language", "french", "english"],
+  "CategoryTags": ["social", "utility"],
+  "RepoUrl": "https://github.com/AdrianJimenezSantiago/DalamudPlugins"
+}

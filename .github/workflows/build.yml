@@ -1,0 +1,54 @@
+name: Build plugins
+
+on:
+  push:
+    branches: [main]
+    paths: ["src/**", "scripts/**", ".github/workflows/build.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-plugins
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      DALAMUD_HOME: ${{ github.workspace }}/.dalamud/
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Download Dalamud
+        run: |
+          mkdir -p "$DALAMUD_HOME"
+          curl -sSfL https://goatcorp.github.io/dalamud-distrib/latest.zip -o dalamud.zip
+          unzip -q dalamud.zip -d "$DALAMUD_HOME"
+          rm dalamud.zip
+
+      - name: Build
+        run: |
+          for proj in src/*/*.csproj; do
+            dotnet build "$proj" -c Release
+          done
+
+      - name: Update repo.json
+        run: python3 scripts/update_repo.py
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add plugins repo.json
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "Update plugins [skip ci]"
+            git push
+          fi
