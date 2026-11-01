@@ -3,7 +3,7 @@
     "Author": "AdrianJimenezSantiago",
     "Name": "LinguaBridge",
     "InternalName": "LinguaBridge",
-    "AssemblyVersion": "1.0.0.0",
+    "AssemblyVersion": "1.0.1.0",
     "Description": "Translates incoming chat messages between two languages (English <-> French by default) using DeepL (best quality, free API key) or Google Translate (no key). Use /tr to translate and send your own messages, e.g. /tr /p Hello everyone!",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/AdrianJimenezSantiago/DalamudPlugins",
@@ -31,7 +31,7 @@
     "DownloadLinkTesting": "https://raw.githubusercontent.com/AdrianJimenezSantiago/DalamudPlugins/main/plugins/LinguaBridge/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/AdrianJimenezSantiago/DalamudPlugins/main/plugins/LinguaBridge/latest.zip",
     "IsTestingExclusive": false,
-    "LastUpdate": 1793524974,
+    "LastUpdate": 1793526069,
     "DownloadCount": 0
   }
 ]
