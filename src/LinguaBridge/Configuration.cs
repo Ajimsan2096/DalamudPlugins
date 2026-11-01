@@ -10,6 +10,7 @@ namespace LinguaBridge;
 public sealed class Configuration : IPluginConfiguration
 {
     public int Version { get; set; } = 1;
+    public bool ShowedWizard { get; set; } = false;
 
     // --- Engine ---
     public TranslationEngine Engine { get; set; } = TranslationEngine.Google;
@@ -18,13 +19,19 @@ public sealed class Configuration : IPluginConfiguration
     public string DeepLFormality { get; set; } = "prefer_less";
     /// <summary>DeepL target variant for English: "EN-US" or "EN-GB".</summary>
     public string EnglishVariant { get; set; } = "EN-US";
+    /// <summary>If DeepL fails (quota, network, bad key) use Google for that message instead of showing nothing.</summary>
+    public bool FallbackToGoogle { get; set; } = true;
 
     // --- Languages ---
     public string LanguageA { get; set; } = "EN";
     public string LanguageB { get; set; } = "FR";
     /// <summary>Expand chat abbreviations (jsp, tkt, idk...) before sending text to the engine.</summary>
     public bool ExpandAbbreviations { get; set; } = true;
-    /// <summary>Also translate messages in languages outside the pair (into language B).</summary>
+    /// <summary>The language you read best: used for Party Finder and for languages outside the pair.</summary>
+    public string PreferredLanguage { get; set; } = "EN";
+    /// <summary>Words never translated (character names, FC name, nicknames...).</summary>
+    public List<string> ProtectedTerms { get; set; } = new();
+    /// <summary>Also translate messages in languages outside the pair (into the preferred language).</summary>
     public bool TranslateOtherLanguages { get; set; } = false;
 
     // --- Incoming chat ---
@@ -42,6 +49,10 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>When not empty, only messages from these players are translated (names, case-insensitive).</summary>
     public List<string> PlayerWhitelist { get; set; } = new();
     public int MaxMessageLength { get; set; } = 400;
+    /// <summary>Do not translate incoming chat while in combat (fewer distractions during pulls).</summary>
+    public bool PauseInCombat { get; set; } = false;
+    /// <summary>Ignore a player's message if they sent another less than 0.65 s before (macro spam).</summary>
+    public bool FilterMacroSpam { get; set; } = true;
 
     // --- Output ---
     /// <summary>Print the translation in the same channel as the original (so it shows in the same chat tab).</summary>
@@ -54,4 +65,10 @@ public sealed class Configuration : IPluginConfiguration
     // --- Outgoing ---
     /// <summary>Print your original text in Echo after sending a translated message.</summary>
     public bool EchoOriginalOnSend { get; set; } = true;
+
+    // --- Extras ---
+    /// <summary>Show an "LB" toggle in the server info bar (top right).</summary>
+    public bool ShowDtrEntry { get; set; } = true;
+    /// <summary>Add "Translate" to the Party Finder listing context menu.</summary>
+    public bool PartyFinderMenu { get; set; } = true;
 }

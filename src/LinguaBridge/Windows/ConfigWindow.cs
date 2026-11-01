@@ -3,6 +3,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.Text;
+using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LinguaBridge.Translation;
@@ -40,6 +41,7 @@ public sealed class ConfigWindow : Window
     private bool showKey;
     private string usage = string.Empty;
     private string whitelistText;
+    private string protectedText;
 
     public ConfigWindow(Plugin plugin) : base("LinguaBridge Settings###LinguaBridgeConfig")
     {
@@ -47,6 +49,7 @@ public sealed class ConfigWindow : Window
         Size = new Vector2(520, 560);
         SizeCondition = ImGuiCond.FirstUseEver;
         whitelistText = string.Join(", ", plugin.Configuration.PlayerWhitelist);
+        protectedText = string.Join(", ", plugin.Configuration.ProtectedTerms);
     }
 
     public override void Draw()
@@ -126,6 +129,17 @@ public sealed class ConfigWindow : Window
                 changed = true;
             }
         }
+        if (cfg.Engine == TranslationEngine.DeepL)
+        {
+            var fb = cfg.FallbackToGoogle;
+            if (ImGui.Checkbox("Use Google automatically if DeepL fails", ref fb))
+            {
+                cfg.FallbackToGoogle = fb;
+                changed = true;
+            }
+            ImGuiComponents.HelpMarker("Quota used up, network error or wrong key: the message is translated with Google " +
+                                       "instead of being lost. You get one warning in chat every 5 minutes at most.");
+        }
         else
         {
             ImGui.TextWrapped("Google's free web endpoint works without setup, but it is unofficial, can rate-limit " +
@@ -166,6 +180,15 @@ public sealed class ConfigWindow : Window
 
         ImGui.TextWrapped("Messages written in A are translated to B and messages written in B are translated to A.");
 
+        var p = IndexOf(cfg.PreferredLanguage);
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("Language you read best", ref p, names, names.Length))
+        {
+            cfg.PreferredLanguage = Languages.All[p].Code;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Used for Party Finder descriptions and, if enabled below, for messages in other languages.");
+
         var expand = cfg.ExpandAbbreviations;
         if (ImGui.Checkbox("Expand chat abbreviations before translating (jsp, tkt, idk, tbh...)", ref expand))
         {
@@ -174,9 +197,20 @@ public sealed class ConfigWindow : Window
         }
 
         var others = cfg.TranslateOtherLanguages;
-        if (ImGui.Checkbox("Also translate other languages (into language B)", ref others))
+        if (ImGui.Checkbox("Also translate other languages (into the language you read best)", ref others))
         {
             cfg.TranslateOtherLanguages = others;
+            changed = true;
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Never translate these words (comma separated):");
+        ImGuiComponents.HelpMarker("Character names, nicknames, FC / static names, inside jokes... DeepL keeps them exactly " +
+                                   "as written. Item links and auto-translate phrases are always kept automatically.");
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.InputTextWithHint("##protected", "e.g. Rukenu, Les Chocobos, Moogle", ref protectedText, 2000))
+        {
+            cfg.ProtectedTerms = protectedText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             changed = true;
         }
 
@@ -223,6 +257,22 @@ public sealed class ConfigWindow : Window
             cfg.TranslateOwnMessages = own;
             changed = true;
         }
+
+        var combat = cfg.PauseInCombat;
+        if (ImGui.Checkbox("Pause while in combat", ref combat))
+        {
+            cfg.PauseInCombat = combat;
+            changed = true;
+        }
+
+        var spam = cfg.FilterMacroSpam;
+        if (ImGui.Checkbox("Ignore macro spam", ref spam))
+        {
+            cfg.FilterMacroSpam = spam;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Skips a player's lines when they arrive less than 0.65 s apart (multi-line macros), " +
+                                   "saving DeepL characters.");
 
         ImGui.TextUnformatted("Only translate these players (comma separated, empty = everyone):");
         ImGui.SetNextItemWidth(-1);
@@ -275,12 +325,33 @@ public sealed class ConfigWindow : Window
             changed = true;
         }
 
+        ImGui.Separator();
+        ImGui.TextUnformatted("Extras");
+
+        var dtr = cfg.ShowDtrEntry;
+        if (ImGui.Checkbox("Show \"LB\" on/off switch in the server info bar", ref dtr))
+        {
+            cfg.ShowDtrEntry = dtr;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Top right of the screen. Left click toggles translation, right click opens the window.");
+
+        var pf = cfg.PartyFinderMenu;
+        if (ImGui.Checkbox("Party Finder: \"Translate description\" in the right-click menu", ref pf))
+        {
+            cfg.PartyFinderMenu = pf;
+            changed = true;
+        }
+
         if (changed)
             plugin.SaveConfig();
     }
 
-    private static void DrawHelp()
+    private void DrawHelp()
     {
+        if (ImGui.Button("Open setup wizard"))
+            plugin.OpenWizard();
+        ImGui.Spacing();
         ImGui.TextWrapped(
             "Incoming: messages in the selected channels are translated automatically and shown below the original " +
             "with a tag like [EN>FR]. Only you see the translation.\n\n" +
@@ -291,8 +362,10 @@ public sealed class ConfigWindow : Window
             "  /tr /t Jane Doe@Ragnarok hi!   -> tell\n" +
             "  /tr /t <t> thanks!             -> tell to your target\n" +
             "  /tr :en /fc Merci beaucoup     -> force English\n\n" +
-            "/linguabridge opens the history window (with a compose box), /linguabridge config opens settings, " +
-            "/linguabridge on|off toggles incoming translation.\n\n" +
+            "/lb (or /linguabridge) opens the history window: press \"Reply\" on a message to answer it translated in " +
+            "the same channel, or use the compose box with Preview to check the meaning before sending.\n" +
+            "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb wizard reruns the setup.\n\n" +
+            "Party Finder: right-click a listing > \"Translate description\".\n\n" +
             "Tip: your friends need the plugin too if they want to read your messages in their language; or simply use /tr " +
             "so they receive your text already translated.");
     }

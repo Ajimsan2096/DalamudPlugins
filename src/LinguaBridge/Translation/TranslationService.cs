@@ -9,8 +9,8 @@ namespace LinguaBridge.Translation;
 public sealed record TranslationResult(string Original, string Text, Language Source, Language Target, string Engine);
 
 /// <summary>
-/// Picks the direction (A to B or B to A), calls the selected engine, and caches results so that
-/// repeated messages (shouts, macros) cost nothing.
+/// Picks the direction (A to B or B to A), calls the selected engine (falling back to Google when
+/// DeepL fails), protects names/links, and caches results so repeated messages cost nothing.
 /// </summary>
 public sealed class TranslationService : IDisposable
 {
@@ -28,6 +28,9 @@ public sealed class TranslationService : IDisposable
     public DeepLTranslator DeepL { get; }
     public GoogleTranslator Google { get; }
 
+    /// <summary>Raised (from a worker thread) when DeepL failed and Google was used instead.</summary>
+    public event Action<string>? FallbackUsed;
+
     /// <summary>Characters sent to the engine this session (cache hits not counted).</summary>
     public long CharactersSent => Interlocked.Read(ref charactersSent);
     private long charactersSent;
@@ -36,7 +39,7 @@ public sealed class TranslationService : IDisposable
     {
         this.config = config;
         http = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("LinguaBridge-Dalamud/1.0");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("LinguaBridge-Dalamud/1.1");
         DeepL = new DeepLTranslator(http, config);
         Google = new GoogleTranslator(http);
     }
@@ -47,22 +50,26 @@ public sealed class TranslationService : IDisposable
     /// Translates <paramref name="text"/> to the "other" language of the configured pair, or to
     /// <paramref name="forcedTarget"/> when given. Returns null when the text is already in the
     /// target language, or is in a language outside the pair and the settings say to ignore it.
+    /// The text may contain <see cref="ProtectedText"/> spans.
     /// </summary>
     public async Task<TranslationResult?> TranslateAsync(string text, Language? forcedTarget = null, bool translateOthers = false)
     {
         var cfg = config();
         var a = Languages.Get(cfg.LanguageA);
         var b = Languages.Get(cfg.LanguageB);
+        var preferred = Languages.Get(cfg.PreferredLanguage);
         var engine = Engine;
 
-        var key = $"{engine.Name}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{translateOthers}|{text}";
+        text = ProtectedText.ProtectTerms(text, cfg.ProtectedTerms);
+
+        var key = $"{engine.Name}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{preferred.Code}|{translateOthers}|{text}";
         if (TryGetCached(key, out var cached))
             return cached;
 
         await concurrency.WaitAsync(lifetime.Token).ConfigureAwait(false);
         try
         {
-            var result = await TranslateUncachedAsync(engine, text, a, b, forcedTarget, translateOthers, lifetime.Token)
+            var result = await TranslateUncachedAsync(engine, text, a, b, preferred, forcedTarget, translateOthers, lifetime.Token)
                              .ConfigureAwait(false);
             AddCached(key, result);
             return result;
@@ -74,22 +81,21 @@ public sealed class TranslationService : IDisposable
     }
 
     private async Task<TranslationResult?> TranslateUncachedAsync(
-        ITranslator engine, string text, Language a, Language b, Language? forcedTarget, bool translateOthers, CancellationToken ct)
+        ITranslator engine, string text, Language a, Language b, Language preferred, Language? forcedTarget,
+        bool translateOthers, CancellationToken ct)
     {
+        var detectable = ProtectedText.WithoutProtected(text);
+
         if (forcedTarget != null)
         {
-            var guess = LanguageDetector.Detect(text, new[] { a.Code, b.Code, forcedTarget.Code });
+            var guess = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code, forcedTarget.Code });
             if (guess == forcedTarget.Code)
                 return null;
-            var input = guess == null ? text : Prepare(text, guess);
-            var r = await CallAsync(engine, input, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
-            if (r.DetectedSource == forcedTarget.Code)
-                return null;
-            return new TranslationResult(text, r.Text, Languages.TryGet(r.DetectedSource) ?? Unknown(r.DetectedSource), forcedTarget, engine.Name);
+            return await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
         }
 
         // 1) Cheap offline guess between the two languages of the pair.
-        var detected = LanguageDetector.Detect(text, new[] { a.Code, b.Code });
+        var detected = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code });
         if (detected == a.Code)
             return await Make(engine, text, a, b, ct);
         if (detected == b.Code)
@@ -97,36 +103,58 @@ public sealed class TranslationService : IDisposable
 
         // 2) Unsure: ask the engine to translate to B with auto-detection and look at what it detected.
         var first = await CallAsync(engine, text, null, b, ct);
-        if (first.DetectedSource == b.Code)
+        if (first.Result.DetectedSource == b.Code)
             return await Make(engine, text, b, a, ct);
-        if (first.DetectedSource == a.Code || translateOthers)
+
+        var isA = first.Result.DetectedSource == a.Code;
+        if (!isA && !translateOthers)
+            return null; // a third language and the user chose to ignore those
+
+        var source = Languages.TryGet(first.Result.DetectedSource) ?? Unknown(first.Result.DetectedSource);
+        if (!isA && preferred.Code != b.Code)
         {
-            if (string.Equals(first.Text.Trim(), text.Trim(), StringComparison.OrdinalIgnoreCase))
-                return null; // names, emotes, untranslatable
-            var src = Languages.TryGet(first.DetectedSource) ?? Unknown(first.DetectedSource);
-            return new TranslationResult(text, first.Text, src, b, engine.Name);
+            if (source.Code == preferred.Code)
+                return null;
+            return await Make(engine, text, null, preferred, ct);
         }
 
-        return null; // a third language and the user chose to ignore those
+        if (IsSame(first.Result.Text, text))
+            return null; // names, emotes, untranslatable
+        return new TranslationResult(ProtectedText.Plain(text), first.Result.Text, source, b, first.Engine);
     }
 
-    private async Task<TranslationResult?> Make(ITranslator engine, string text, Language source, Language target, CancellationToken ct)
+    private async Task<TranslationResult?> Make(ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
     {
-        var input = Prepare(text, source.Code);
-        var r = await CallAsync(engine, input, source, target, ct);
-        if (string.Equals(r.Text.Trim(), text.Trim(), StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(r.Text.Trim(), input.Trim(), StringComparison.OrdinalIgnoreCase))
+        var input = source == null ? text : Prepare(text, source.Code);
+        var (r, used) = await CallAsync(engine, input, source, target, ct);
+        if (source == null && r.DetectedSource == target.Code)
             return null;
-        return new TranslationResult(text, r.Text, source, target, engine.Name);
+        if (IsSame(r.Text, text) || IsSame(r.Text, input))
+            return null;
+        var src = source ?? Languages.TryGet(r.DetectedSource) ?? Unknown(r.DetectedSource);
+        return new TranslationResult(ProtectedText.Plain(text), r.Text, src, target, used);
     }
+
+    private static bool IsSame(string translated, string original) =>
+        string.Equals(translated.Trim(), ProtectedText.Plain(original).Trim(), StringComparison.OrdinalIgnoreCase);
 
     private string Prepare(string text, string languageCode) =>
-        config().ExpandAbbreviations ? Slang.Expand(text, languageCode) : text;
+        config().ExpandAbbreviations ? ProtectedText.MapUnprotected(text, part => Slang.Expand(part, languageCode)) : text;
 
-    private async Task<EngineResult> CallAsync(ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
+    private async Task<(EngineResult Result, string Engine)> CallAsync(
+        ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
     {
         Interlocked.Add(ref charactersSent, text.Length);
-        return await engine.TranslateAsync(text, source, target, ct).ConfigureAwait(false);
+        try
+        {
+            return (await engine.TranslateAsync(text, source, target, ct).ConfigureAwait(false), engine.Name);
+        }
+        catch (Exception ex) when (engine == DeepL && config().FallbackToGoogle && !ct.IsCancellationRequested &&
+                                   ex is TranslationException or HttpRequestException or TaskCanceledException)
+        {
+            FallbackUsed?.Invoke(ex is TranslationException ? ex.Message : "DeepL did not respond");
+            return (await Google.TranslateAsync(text, source, target, ct).ConfigureAwait(false), "Google (fallback)");
+        }
     }
 
     private static Language Unknown(string code) =>

@@ -18,7 +18,7 @@ public sealed class GoogleTranslator(HttpClient http) : ITranslator
     public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, CancellationToken ct)
     {
         var url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
-                  $"&sl={source?.GoogleCode ?? "auto"}&tl={target.GoogleCode}&q={Uri.EscapeDataString(text)}";
+                  $"&sl={source?.GoogleCode ?? "auto"}&tl={target.GoogleCode}&q={Uri.EscapeDataString(ProtectedText.Plain(text))}";
 
         using var response = await http.GetAsync(url, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

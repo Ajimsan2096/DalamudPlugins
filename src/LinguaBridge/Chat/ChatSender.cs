@@ -37,29 +37,40 @@ public static class ChatSender
     }
 
     /// <summary>
+    /// Replaces characters the game font (AXIS) cannot draw with close equivalents, so text shows
+    /// correctly in the chat log. Accents like é è à ç ê are fine; œ, typographic quotes and
+    /// French narrow spaces are not.
+    /// </summary>
+    public static string FoldForGame(string text)
+    {
+        var sb = new StringBuilder(text.Length);
+        foreach (var c in text)
+        {
+            switch (c)
+            {
+                case '\r' or '\n' or '\t': sb.Append(' '); break;
+                case '\u00A0' or '\u202F' or '\u2009' or '\u2007' or '\u200B': sb.Append(' '); break;
+                case '\u2018' or '\u2019' or '\u02BC' or '\u2032': sb.Append('\''); break;
+                case '\u201C' or '\u201D' or '\u201E' or '\u2033': sb.Append('"'); break;
+                case '\u2013' or '\u2014' or '\u2212': sb.Append('-'); break;
+                case '\u2026': sb.Append("..."); break;
+                case '\u0153': sb.Append("oe"); break;
+                case '\u0152': sb.Append("OE"); break;
+                case '\u2022': sb.Append('-'); break;
+                case '\u20AC': sb.Append("EUR"); break;
+                default: sb.Append(c); break;
+            }
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
     /// Makes engine output safe for the game chat: one line, characters the game font can show,
     /// and never starting with '/' (which would run a command).
     /// </summary>
     public static string Clean(string text)
     {
-        var sb = new StringBuilder(text.Length);
-        foreach (var c in text)
-        {
-            sb.Append(c switch
-            {
-                '\r' or '\n' or '\t' => ' ',
-                ' ' or ' ' or ' ' or ' ' => ' ', // French typographic spaces
-                '‘' or '’' or 'ʼ' => '\'',
-                '“' or '”' or '„' => '"',
-                '–' or '—' => '-',
-                '…' => '.',
-                _ => c,
-            });
-            if (c == '…')
-                sb.Append("..");
-        }
-
-        var result = sb.ToString().Trim();
+        var result = FoldForGame(text).Trim();
         while (result.StartsWith('/'))
             result = result[1..].TrimStart();
         return result;

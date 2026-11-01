@@ -40,12 +40,17 @@ public sealed class DeepLTranslator : ITranslator
 
         var body = new Dictionary<string, object>
         {
-            ["text"] = new[] { text },
+            ["text"] = new[] { ProtectedText.HasProtected(text) ? ProtectedText.ToDeepLXml(text) : text },
             ["target_lang"] = target.Code == "EN" ? cfg.EnglishVariant : target.DeepLTarget,
             ["context"] = GameContext,
         };
         if (source != null)
             body["source_lang"] = source.DeepLSource;
+        if (ProtectedText.HasProtected(text))
+        {
+            body["tag_handling"] = "xml";
+            body["ignore_tags"] = new[] { "x" };
+        }
         if (cfg.DeepLFormality != "default")
             body["formality"] = cfg.DeepLFormality;
 
@@ -72,7 +77,8 @@ public sealed class DeepLTranslator : ITranslator
         if (result?.Translations is not { Length: > 0 } t)
             throw new TranslationException("DeepL returned an empty response.");
 
-        return new EngineResult(t[0].Text, Languages.NormalizeDetected(t[0].DetectedSourceLanguage));
+        var translated = ProtectedText.HasProtected(text) ? ProtectedText.FromDeepLXml(t[0].Text) : t[0].Text;
+        return new EngineResult(translated, Languages.NormalizeDetected(t[0].DetectedSourceLanguage));
     }
 
     /// <summary>Returns (used, limit) characters for the current billing period.</summary>

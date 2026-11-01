@@ -72,10 +72,10 @@ public static partial class LanguageDetector
             return null;
 
         var scores = new Dictionary<string, double>();
-        foreach (var lang in candidates)
+        // Score every language we know, not only the candidates: a Spanish message must not be
+        // mistaken for French just because Spanish is not part of the configured pair.
+        foreach (var (lang, stop) in StopWords)
         {
-            if (!StopWords.TryGetValue(lang, out var stop))
-                continue;
             double score = words.Count(w => stop.Contains(w) || (w.Length > 1 && Slang.IsKnown(lang, w)));
             // Elided forms (j'ai, c'est, l'eau, qu'il...) are a strong French signal.
             if (lang == "FR")
@@ -94,6 +94,8 @@ public static partial class LanguageDetector
 
         var ordered = scores.OrderByDescending(kv => kv.Value).ToList();
         var best = ordered[0];
+        if (!candidates.Contains(best.Key))
+            return null;
         var second = ordered.Count > 1 ? ordered[1].Value : 0;
 
         // Require a clear winner; otherwise let the engine decide.
