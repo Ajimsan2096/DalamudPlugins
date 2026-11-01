@@ -91,7 +91,11 @@ public sealed class TranslationService : IDisposable
             var guess = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code, forcedTarget.Code });
             if (guess == forcedTarget.Code)
                 return null;
-            return await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
+            var forced = await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
+            // Incoming one-way mode: a third language is only shown if the user asked for those.
+            if (forced != null && !translateOthers && forced.Source.Code != a.Code && forced.Source.Code != b.Code)
+                return null;
+            return forced;
         }
 
         // 1) Cheap offline guess between the two languages of the pair.

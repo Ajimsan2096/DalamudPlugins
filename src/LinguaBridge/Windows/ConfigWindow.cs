@@ -244,7 +244,7 @@ public sealed class ConfigWindow : Window
         if (cfg.LanguageA == cfg.LanguageB)
             ImGui.TextColored(new Vector4(1, 0.4f, 0.4f, 1), "Language A and B must be different.");
 
-        ImGui.TextWrapped("Messages written in A are translated to B and messages written in B are translated to A.");
+        ImGui.TextWrapped("Your messages sent with /tr go from A to B or from B to A automatically.");
 
         var p = IndexOf(cfg.PreferredLanguage);
         ImGui.SetNextItemWidth(220);
@@ -253,7 +253,17 @@ public sealed class ConfigWindow : Window
             cfg.PreferredLanguage = Languages.All[p].Code;
             changed = true;
         }
-        ImGuiComponents.HelpMarker("Used for Party Finder descriptions and, if enabled below, for messages in other languages.");
+        ImGuiComponents.HelpMarker("Incoming chat is translated into this language, plus Party Finder descriptions.");
+
+        var oneWay = cfg.IncomingOnlyToPreferred;
+        if (ImGui.Checkbox("Only translate incoming chat into the language I read best", ref oneWay))
+        {
+            cfg.IncomingOnlyToPreferred = oneWay;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("On: messages already in your language are left alone (e.g. reading English, only French " +
+                                   "gets translated).\nOff: both directions (English is also translated to French). " +
+                                   "/tr always works both ways.");
 
         var expand = cfg.ExpandAbbreviations;
         if (ImGui.Checkbox("Expand chat abbreviations before translating (jsp, tkt, idk, tbh...)", ref expand))

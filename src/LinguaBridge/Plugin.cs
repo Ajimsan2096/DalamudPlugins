@@ -322,7 +322,10 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         try
         {
-            var result = await Translator.TranslateAsync(text, translateOthers: Configuration.TranslateOtherLanguages)
+            var result = Configuration.IncomingOnlyToPreferred
+                ? await Translator.TranslateAsync(text, Languages.Get(Configuration.PreferredLanguage),
+                                                  Configuration.TranslateOtherLanguages).ConfigureAwait(false)
+                : await Translator.TranslateAsync(text, translateOthers: Configuration.TranslateOtherLanguages)
                                          .ConfigureAwait(false);
             if (result == null)
                 return;

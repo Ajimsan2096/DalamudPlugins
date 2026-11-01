@@ -115,11 +115,14 @@ public sealed class SetupWizard : Window
 
         ImGui.Spacing();
         ImGui.TextUnformatted("Which language do you read best?");
-        ImGui.TextDisabled("Used for Party Finder descriptions and for messages in other languages.");
+        ImGui.TextDisabled("Incoming chat is translated into this language.");
         var p = IndexOf(cfg.PreferredLanguage);
         ImGui.SetNextItemWidth(170);
         if (ImGui.Combo("##wp", ref p, names, names.Length))
             cfg.PreferredLanguage = Languages.All[p].Code;
+        var both = !cfg.IncomingOnlyToPreferred;
+        if (ImGui.Checkbox("I want translations in both directions (I read neither language well)", ref both))
+            cfg.IncomingOnlyToPreferred = !both;
     }
 
     private void DrawEngine()

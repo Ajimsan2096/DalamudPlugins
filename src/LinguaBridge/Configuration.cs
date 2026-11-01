@@ -32,6 +32,11 @@ public sealed class Configuration : IPluginConfiguration
     public bool ExpandAbbreviations { get; set; } = true;
     /// <summary>The language you read best: used for Party Finder and for languages outside the pair.</summary>
     public string PreferredLanguage { get; set; } = "EN";
+    /// <summary>
+    /// Incoming chat is only translated INTO the preferred language (messages already in it are left alone).
+    /// When false, the pair works both ways (A to B and B to A). /tr is always two-way.
+    /// </summary>
+    public bool IncomingOnlyToPreferred { get; set; } = true;
     /// <summary>Words never translated (character names, FC name, nicknames...).</summary>
     public List<string> ProtectedTerms { get; set; } = new();
     /// <summary>Also translate messages in languages outside the pair (into the preferred language).</summary>
