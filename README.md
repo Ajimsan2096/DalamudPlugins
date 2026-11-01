@@ -8,7 +8,7 @@ Repositorio personal de plugins de Dalamud para FFXIV.
 2. En **Custom Plugin Repositories** pega esta URL, pulsa **+** y luego **Save and Close**:
 
    ```
-   https://raw.githubusercontent.com/AdrianJimenezSantiago/DalamudPlugins/main/repo.json
+   https://raw.githubusercontent.com/Ajimsan2096/DalamudPlugins/main/repo.json
    ```
 3. Abre `/xlplugins` y busca el plugin.
 
