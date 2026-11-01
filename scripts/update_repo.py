@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-RAW = "https://raw.githubusercontent.com/AdrianJimenezSantiago/DalamudPlugins/main"
+RAW = "https://raw.githubusercontent.com/Ajimsan2096/DalamudPlugins/main"
 
 
 def main() -> None:
