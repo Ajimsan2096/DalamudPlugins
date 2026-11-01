@@ -2,7 +2,7 @@
   <PropertyGroup>
     <Version>1.1.0.0</Version>
     <Description>Real-time chat translation (DeepL / Google) between two languages, e.g. English and French.</Description>
-    <PackageProjectUrl>https://github.com/AdrianJimenezSantiago/DalamudPlugins</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/Ajimsan2096/DalamudPlugins</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
     <IsPackable>false</IsPackable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
