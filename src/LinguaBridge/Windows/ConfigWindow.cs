@@ -166,6 +166,13 @@ public sealed class ConfigWindow : Window
 
         ImGui.TextWrapped("Messages written in A are translated to B and messages written in B are translated to A.");
 
+        var expand = cfg.ExpandAbbreviations;
+        if (ImGui.Checkbox("Expand chat abbreviations before translating (jsp, tkt, idk, tbh...)", ref expand))
+        {
+            cfg.ExpandAbbreviations = expand;
+            changed = true;
+        }
+
         var others = cfg.TranslateOtherLanguages;
         if (ImGui.Checkbox("Also translate other languages (into language B)", ref others))
         {

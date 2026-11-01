@@ -81,7 +81,8 @@ public sealed class TranslationService : IDisposable
             var guess = LanguageDetector.Detect(text, new[] { a.Code, b.Code, forcedTarget.Code });
             if (guess == forcedTarget.Code)
                 return null;
-            var r = await CallAsync(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
+            var input = guess == null ? text : Prepare(text, guess);
+            var r = await CallAsync(engine, input, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
             if (r.DetectedSource == forcedTarget.Code)
                 return null;
             return new TranslationResult(text, r.Text, Languages.TryGet(r.DetectedSource) ?? Unknown(r.DetectedSource), forcedTarget, engine.Name);
@@ -111,11 +112,16 @@ public sealed class TranslationService : IDisposable
 
     private async Task<TranslationResult?> Make(ITranslator engine, string text, Language source, Language target, CancellationToken ct)
     {
-        var r = await CallAsync(engine, text, source, target, ct);
-        if (string.Equals(r.Text.Trim(), text.Trim(), StringComparison.OrdinalIgnoreCase))
+        var input = Prepare(text, source.Code);
+        var r = await CallAsync(engine, input, source, target, ct);
+        if (string.Equals(r.Text.Trim(), text.Trim(), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(r.Text.Trim(), input.Trim(), StringComparison.OrdinalIgnoreCase))
             return null;
         return new TranslationResult(text, r.Text, source, target, engine.Name);
     }
+
+    private string Prepare(string text, string languageCode) =>
+        config().ExpandAbbreviations ? Slang.Expand(text, languageCode) : text;
 
     private async Task<EngineResult> CallAsync(ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
     {

@@ -76,7 +76,7 @@ public static partial class LanguageDetector
         {
             if (!StopWords.TryGetValue(lang, out var stop))
                 continue;
-            double score = words.Count(stop.Contains);
+            double score = words.Count(w => stop.Contains(w) || (w.Length > 1 && Slang.IsKnown(lang, w)));
             // Elided forms (j'ai, c'est, l'eau, qu'il...) are a strong French signal.
             if (lang == "FR")
                 score += 1.5 * words.Count(w => w.Length > 2 && w[1] == '\'' && "jcdlmnstq".Contains(w[0]));

@@ -14,6 +14,7 @@ public sealed class DeepLTranslator : ITranslator
 {
     private const string GameContext =
         "Casual chat message between players in the online game Final Fantasy XIV. " +
+        "Players use internet slang and SMS abbreviations (e.g. French jsp = je sais pas, tkt = t'inquiète, mdr = lol). " +
         "Keep it short and informal; keep player names, game abbreviations and emoticons unchanged.";
 
     private readonly HttpClient http;

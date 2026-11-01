@@ -22,6 +22,8 @@ public sealed class Configuration : IPluginConfiguration
     // --- Languages ---
     public string LanguageA { get; set; } = "EN";
     public string LanguageB { get; set; } = "FR";
+    /// <summary>Expand chat abbreviations (jsp, tkt, idk...) before sending text to the engine.</summary>
+    public bool ExpandAbbreviations { get; set; } = true;
     /// <summary>Also translate messages in languages outside the pair (into language B).</summary>
     public bool TranslateOtherLanguages { get; set; } = false;
 
