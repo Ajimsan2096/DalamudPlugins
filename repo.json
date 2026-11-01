@@ -3,7 +3,7 @@
     "Author": "Ajimsan2096",
     "Name": "LinguaBridge",
     "InternalName": "LinguaBridge",
-    "AssemblyVersion": "1.1.0.0",
+    "AssemblyVersion": "1.2.0.0",
     "Description": "Translates chat between two languages in both directions (English <-> French by default) with DeepL (best quality, free API key) or Google (no key), with automatic fallback.\n\n- Incoming messages get a translated line in the same chat tab.\n- /tr translates and sends your messages: /tr /p Hello everyone!\n- History window with one-click translated replies and a preview with back-translation.\n- Item links, auto-translate phrases and names are never translated.\n- Party Finder: right-click > Translate description.\n- Setup wizard, server-bar on/off switch.",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/Ajimsan2096/DalamudPlugins",
@@ -31,7 +31,7 @@
     "DownloadLinkTesting": "https://raw.githubusercontent.com/Ajimsan2096/DalamudPlugins/main/plugins/LinguaBridge/latest.zip",
     "DownloadLinkUpdate": "https://raw.githubusercontent.com/Ajimsan2096/DalamudPlugins/main/plugins/LinguaBridge/latest.zip",
     "IsTestingExclusive": false,
-    "LastUpdate": 1793526866,
+    "LastUpdate": 1793528943,
     "DownloadCount": 0
   }
 ]
