@@ -26,7 +26,8 @@ public sealed partial class LlmTranslator : ITranslator
         "- Keep *actions between asterisks*, quotes, ((OOC)) markers, emoticons (^^, o:, <3) and line structure.\n" +
         "- Never translate names, FFXIV terms or anything listed under 'Keep unchanged'.\n" +
         "- Chat abbreviations (jsp, tkt, idk, tbh...) must be understood and translated naturally.\n" +
-        "- If the message is already in {target}, return it unchanged.\n" +
+        "- The message may mix several languages (e.g. Spanish dialogue with an English *action*): translate EVERY part into {target}.\n" +
+        "- If the message is already entirely in {target}, return it unchanged.\n" +
         "- Output format: first the ISO 639-1 code of the ORIGINAL language in double brackets, then the translation. " +
         "Example: [[fr]] Hello there. Output nothing else: no notes, no quotes around it, no explanations.";
 

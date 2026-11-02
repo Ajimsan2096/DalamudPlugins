@@ -24,7 +24,10 @@ public static partial class LanguageDetector
                      "c'est j'ai t'es y a ça ca aussi plus moins peux veux faut fait vais va allez désolé d'accord"),
         ["ES"] = Set("el la los las un una unos unas y o pero es son era ser estoy está estás yo tú él ella nosotros vosotros ellos " +
                      "mi mis tu tus su sus este esta esto estos de del al en con por para no sí si que qué quién dónde cuándo cómo " +
-                     "muy todo todos bien gracias hola vale porque también más menos puedo quiero hay vamos"),
+                     "muy todo todos bien gracias hola vale porque también más menos puedo quiero hay vamos " +
+                     "como eres soy somos quien quién verdad esto esta eso así mas ti lo nos sin entonces ahora aquí " +
+                     "algo nada tan hoy solo sólo cuando donde tengo tienes hace hacer voy vas estamos mucho muchísimo muchisimo " +
+                     "pues bueno claro oye mira vale guapa guapo cariño amor también tú"),
         ["DE"] = Set("der die das ein eine und oder aber ist sind war sein bin bist ich du er sie es wir ihr mich mein dein " +
                      "nicht kein ja nein mit von zu im am für auf aus wie was wer wo wann warum sehr alles gut danke hallo bitte " +
                      "auch noch schon mal kann will muss gibt"),
@@ -52,6 +55,21 @@ public static partial class LanguageDetector
         if (words.Count == 0)
             return true;
         return words.All(w => Neutral.Contains(w) || w.Length == 1);
+    }
+
+    /// <summary>
+    /// Weaker guess for short fragments: the best-scoring candidate even without a clear margin
+    /// (still null on ties or when nothing matches).
+    /// </summary>
+    public static string? WeakGuess(string text, IReadOnlyCollection<string> candidates)
+    {
+        var words = WordRegex().Matches(text.ToLowerInvariant()).Select(m => m.Value.Trim('\'')).Where(w => w.Length > 0).ToList();
+        var scored = StopWords.Where(kv => candidates.Contains(kv.Key))
+                              .Select(kv => (Lang: kv.Key, Score: words.Count(w => kv.Value.Contains(w) || (w.Length > 1 && Slang.IsKnown(kv.Key, w)))))
+                              .OrderByDescending(x => x.Score).ToList();
+        if (scored.Count == 0 || scored[0].Score == 0 || (scored.Count > 1 && scored[1].Score == scored[0].Score))
+            return null;
+        return scored[0].Lang;
     }
 
     /// <summary>Guesses which of <paramref name="candidates"/> the text is written in, or null when unsure.</summary>

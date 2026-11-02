@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -127,6 +128,11 @@ public sealed class TranslationService : IDisposable
     {
         var detectable = ProtectedText.WithoutProtected(text);
 
+        // Messages that mix languages ("Spanish speech *English action* Spanish") are handled chunk by chunk.
+        var chunks = MixedText.Split(text);
+        if (MixedText.IsMixed(chunks))
+            return await TranslateMixedAsync(engine, text, chunks, a, b, forcedTarget, translateOthers, options, ct);
+
         if (forcedTarget != null)
         {
             var guess = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code, forcedTarget.Code });
@@ -166,6 +172,50 @@ public sealed class TranslationService : IDisposable
         if (IsSame(first.Result.Text, text))
             return null; // names, emotes, untranslatable
         return new TranslationResult(ProtectedText.Plain(text), first.Result.Text, source, b, first.Engine);
+    }
+
+    private async Task<TranslationResult?> TranslateMixedAsync(
+        ITranslator engine, string text, List<MixedText.Chunk> chunks, Language a, Language b, Language? forcedTarget,
+        bool translateOthers, TranslateOptions options, CancellationToken ct)
+    {
+        var dominant = MixedText.Dominant(chunks);
+        var target = forcedTarget ?? (dominant == a.Code ? b : a);
+        var langs = chunks.Select(c => c.Lang).Where(l => l != null).Distinct().ToList();
+        if (langs.All(l => l == target.Code))
+            return null;
+        if (!translateOthers && !langs.Any(l => l != target.Code && (l == a.Code || l == b.Code)))
+            return null;
+        var source = Languages.TryGet(chunks.Where(c => c.Lang != target.Code)
+                                            .GroupBy(c => c.Lang).OrderByDescending(g => g.Sum(c => c.Text.Length))
+                                            .First().Key ?? string.Empty) ?? Unknown("??");
+
+        // AI understands mixed input in one go (and keeps the scene coherent).
+        if (engine == Llm)
+        {
+            var (r, used) = await CallAsync(engine, text, null, target, options, ct);
+            return IsSame(r.Text, text) ? null : new TranslationResult(ProtectedText.Plain(text), r.Text, source, target, used);
+        }
+
+        // DeepL / Google: one request per language chunk, each from its real source language.
+        var sb = new StringBuilder();
+        var engines = new HashSet<string>();
+        foreach (var chunk in chunks)
+        {
+            if (chunk.Lang == target.Code)
+            {
+                sb.Append(ProtectedText.Plain(chunk.Text)).Append(chunk.Trailing);
+                continue;
+            }
+            var src = chunk.Lang == null ? null : Languages.TryGet(chunk.Lang);
+            var input = src == null ? chunk.Text : Prepare(chunk.Text, src.Code);
+            var (r, used) = await CallAsync(engine, input, src, target, options, ct);
+            engines.Add(used);
+            sb.Append(r.Text.Trim()).Append(chunk.Trailing);
+        }
+        var translated = sb.ToString().Trim();
+        return IsSame(translated, text)
+            ? null
+            : new TranslationResult(ProtectedText.Plain(text), translated, source, target, string.Join(", ", engines));
     }
 
     private async Task<TranslationResult?> Make(
