@@ -66,6 +66,8 @@ public sealed class Configuration : IPluginConfiguration
     // --- Output ---
     /// <summary>Print the translation in the same channel as the original (so it shows in the same chat tab).</summary>
     public bool PrintInSameChannel { get; set; } = true;
+    /// <summary>Show translations below the original, or replace the original with its translation.</summary>
+    public IncomingDisplay IncomingDisplay { get; set; } = IncomingDisplay.Below;
     public XivChatType FallbackOutputChannel { get; set; } = XivChatType.Echo;
     /// <summary>UIColor row used for the "[EN&gt;FR]" tag.</summary>
     public ushort TagColor { get; set; } = 45;
@@ -133,6 +135,16 @@ public sealed class Configuration : IPluginConfiguration
         }
         return changed;
     }
+}
+
+public enum IncomingDisplay
+{
+    /// <summary>Original message, then a translated line below it.</summary>
+    Below = 0,
+    /// <summary>Only the translation is shown (in the original's place and order). Original kept in /lb history.</summary>
+    Replace = 1,
+    /// <summary>Replace only while roleplay mode is on (long RP posts), below otherwise.</summary>
+    ReplaceInRoleplay = 2,
 }
 
 public enum LlmUsage

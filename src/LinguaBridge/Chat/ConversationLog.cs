@@ -42,7 +42,7 @@ public sealed class ConversationLog
     }
 
     /// <summary>The last <paramref name="lines"/> lines (oldest first), or null when there are none.</summary>
-    public string? Recent(string key, int lines)
+    public string? Recent(string key, int lines, int maxChars = MaxContextChars)
     {
         if (lines <= 0)
             return null;
@@ -52,7 +52,7 @@ public sealed class ConversationLog
                 return null;
             var picked = log.Skip(Math.Max(0, log.Count - lines)).ToList();
             var text = string.Join("\n", picked);
-            return text.Length <= MaxContextChars ? text : text[^MaxContextChars..];
+            return text.Length <= maxChars ? text : text[^maxChars..];
         }
     }
 }

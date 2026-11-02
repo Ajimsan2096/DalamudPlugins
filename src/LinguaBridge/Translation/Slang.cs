@@ -30,6 +30,10 @@ public static partial class Slang
             ["oklm"] = "tranquille", ["askip"] = "à ce qu'il paraît", ["jdois"] = "je dois", ["jpeux"] = "je peux",
             ["ya"] = "il y a", ["yen"] = "il y en", ["ptet"] = "peut-être", ["p-e"] = "peut-être", ["mm"] = "même",
             ["kan"] = "quand", ["koi"] = "quoi", ["ki"] = "qui", ["bb"] = "bébé", ["bn"] = "bonne nuit",
+            ["ca"] = "ça", ["deja"] = "déjà", ["tres"] = "très", ["etre"] = "être", ["apres"] = "après",
+            ["voila"] = "voilà", ["forcant"] = "forçant", ["commencant"] = "commençant", ["francais"] = "français",
+            ["francaise"] = "française", ["garcon"] = "garçon", ["recu"] = "reçu", ["calin"] = "câlin", ["calins"] = "câlins",
+            ["caline"] = "câline", ["calines"] = "câlines", ["caliner"] = "câliner", ["fache"] = "fâché", ["fachee"] = "fâchée",
             ["cv"] = "ça va", ["stv"] = "si tu veux", ["jtd"] = "je t'adore", ["bsx"] = "bisous", ["biz"] = "bises",
             ["pti"] = "petit", ["ptite"] = "petite", ["tjs"] = "toujours", ["fds"] = "fin de semaine", ["dmn"] = "demain",
         }),
@@ -79,8 +83,14 @@ public static partial class Slang
         Maps.TryGetValue(language, out var map) && map.ContainsKey(word);
 
     /// <summary>Replaces known abbreviations of <paramref name="language"/> in <paramref name="text"/>.</summary>
+    // French: "tu a" / "tu m'a" / "tu n'a" (very common typo for "tu as" / "tu m'as" / "tu n'as").
+    [GeneratedRegex(@"\b([Tt]u (?:n'|m'|t'|l')?)a\b(?!['\-])", RegexOptions.CultureInvariant)]
+    private static partial Regex FrenchTuARegex();
+
     public static string Expand(string text, string language)
     {
+        if (language == "FR")
+            text = FrenchTuARegex().Replace(text, "$1as");
         if (!Maps.TryGetValue(language, out var map))
             return text;
         return TokenRegex().Replace(text, m =>

@@ -391,6 +391,19 @@ public sealed class ConfigWindow : Window
         ImGui.Separator();
         ImGui.TextUnformatted("Output");
 
+        string[] displays = { "Translation below the original", "Replace the original with its translation",
+                              "Replace only in roleplay mode" };
+        var display = (int)cfg.IncomingDisplay;
+        ImGui.SetNextItemWidth(300);
+        if (ImGui.Combo("How to show translations", ref display, displays, displays.Length))
+        {
+            cfg.IncomingDisplay = (IncomingDisplay)display;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Replace: you only see the translated message (with its [FR>EN] tag), in the same order, " +
+                                   "so long RP posts are not shown twice. If a translation fails or takes over 12 s, " +
+                                   "the original is shown instead. Originals stay in the /lb history window.");
+
         var same = cfg.PrintInSameChannel;
         if (ImGui.Checkbox("Show translation in the same channel as the original", ref same))
         {

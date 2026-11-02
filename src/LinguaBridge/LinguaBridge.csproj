@@ -1,6 +1,6 @@
 <Project Sdk="Dalamud.NET.Sdk/15.0.0">
   <PropertyGroup>
-    <Version>1.5.0.0</Version>
+    <Version>1.6.0.0</Version>
     <Description>Real-time chat translation (DeepL / Google) between two languages, e.g. English and French.</Description>
     <PackageProjectUrl>https://github.com/Ajimsan2096/DalamudPlugins</PackageProjectUrl>
     <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>

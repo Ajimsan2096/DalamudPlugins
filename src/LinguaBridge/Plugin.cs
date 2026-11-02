@@ -57,6 +57,14 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly Dictionary<string, long> lastMessageBySender = new();
     private readonly ConversationLog conversations = new();
     private string? lastTellPartner;
+
+    // Replace mode: translations are printed in arrival order; originals re-printed (on failure) are skipped once.
+    private readonly object outputLock = new();
+    private Task outputChain = Task.CompletedTask;
+    private readonly ConcurrentDictionary<string, DateTime> reprinted = new();
+
+    private bool ReplaceMode => Configuration.IncomingDisplay == IncomingDisplay.Replace ||
+                                (Configuration.IncomingDisplay == IncomingDisplay.ReplaceInRoleplay && Configuration.RoleplayMode);
     private DateTime lastErrorPrinted = DateTime.MinValue;
     private DateTime lastFallbackPrinted = DateTime.MinValue;
 
@@ -361,13 +369,15 @@ public sealed partial class Plugin : IDalamudPlugin
             var plainText = message.Message.TextValue.Trim();
             if (OwnTagRegex().IsMatch(plainText))
                 return;
+            if (reprinted.TryRemove(plainText, out _))
+                return; // an original we printed back ourselves after a failed translation
 
             // Every line of the conversation (yours included) becomes context for the next translations.
             var convoName = type is XivChatType.TellIncoming or XivChatType.TellOutgoing ? senderName : null;
             if (type == XivChatType.TellIncoming)
                 lastTellPartner = senderName;
             var convo = ConversationLog.KeyFor(type, convoName);
-            var history = conversations.Recent(convo, cfg.ContextLines);
+            var history = conversations.Recent(convo, cfg.ContextLines, cfg.RoleplayMode ? 3000 : 1500);
             conversations.Add(convo, isOwn ? (string.IsNullOrEmpty(me) ? "Me" : me) : senderName, plainText, isEmote);
 
             if (isOwn && !cfg.TranslateOwnMessages)
@@ -394,7 +404,22 @@ public sealed partial class Plugin : IDalamudPlugin
             if (!string.IsNullOrEmpty(me))
                 names.Add(me);
             var ctx = new TranslateRequestContext(history, names);
-            _ = HandleIncomingAsync(type, senderName, senderBytes, text, reply, ctx);
+            var translation = TranslateIncomingAsync(type, senderName, text, reply, ctx);
+
+            if (ReplaceMode)
+            {
+                // Hide the original now; print its translation (or the original, if that fails) in arrival order.
+                message.PreventOriginal();
+                var originalBytes = message.Message.Encode();
+                lock (outputLock)
+                    outputChain = outputChain.ContinueWith(
+                        _ => PrintReplacementAsync(translation, type, senderBytes, originalBytes, plainText),
+                        TaskScheduler.Default).Unwrap();
+            }
+            else
+            {
+                _ = PrintBelowAsync(translation, type, senderBytes);
+            }
         }
         catch (Exception ex)
         {
@@ -413,8 +438,9 @@ public sealed partial class Plugin : IDalamudPlugin
         return spam;
     }
 
-    private async Task HandleIncomingAsync(
-        XivChatType type, string senderName, byte[] senderBytes, string text, string? reply, TranslateRequestContext ctx)
+    /// <summary>Translation of an incoming message, or null (already in your language, filtered, or failed).</summary>
+    private async Task<TranslationResult?> TranslateIncomingAsync(
+        XivChatType type, string senderName, string text, string? reply, TranslateRequestContext ctx)
     {
         try
         {
@@ -427,32 +453,74 @@ public sealed partial class Plugin : IDalamudPlugin
                 : await Translator.TranslateAsync(input, translateOthers: Configuration.TranslateOtherLanguages, context: ctx)
                                          .ConfigureAwait(false);
             if (result == null)
-                return;
+                return null;
             if (isEmote)
                 result = result with { Text = StripLeadingName(result.Text, senderName) };
-
             AddHistory(new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply));
+            return result;
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, force: false);
+            return null;
+        }
+    }
 
-            var outType = Configuration.PrintInSameChannel ? type : Configuration.FallbackOutputChannel;
-            var tagged = new SeStringBuilder()
-                         .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
-                         .AddText(ChatSender.FoldForGame(result.Text))
-                         .Build();
+    private SeString Tagged(TranslationResult result) =>
+        new SeStringBuilder()
+            .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
+            .AddText(ChatSender.FoldForGame(result.Text))
+            .Build();
 
+    private async Task PrintBelowAsync(Task<TranslationResult?> translation, XivChatType type, byte[] senderBytes)
+    {
+        var result = await translation.ConfigureAwait(false);
+        if (result == null)
+            return;
+        var outType = Configuration.PrintInSameChannel ? type : Configuration.FallbackOutputChannel;
+        await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+        {
+            Type = outType,
+            Name = SeString.Parse(senderBytes),
+            Message = Tagged(result),
+        })).ConfigureAwait(false);
+    }
+
+    private async Task PrintReplacementAsync(
+        Task<TranslationResult?> translation, XivChatType type, byte[] senderBytes, byte[] originalBytes, string plainText)
+    {
+        TranslationResult? result = null;
+        try
+        {
+            result = await translation.WaitAsync(TimeSpan.FromSeconds(12)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // too slow: show the original rather than keep the conversation waiting
+        }
+
+        try
+        {
             await Framework.RunOnFrameworkThread(() =>
             {
+                if (result == null)
+                    reprinted[plainText] = DateTime.Now;
                 ChatGui.Print(new XivChatEntry
                 {
-                    Type = outType,
+                    Type = type,
                     Name = SeString.Parse(senderBytes),
-                    Message = tagged,
+                    Message = result != null ? Tagged(result) : SeString.Parse(originalBytes),
                 });
             }).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            ReportError(ex, force: false);
+            Log.Error(ex, "Could not print replacement");
         }
+
+        // Forget stale "re-printed" marks (e.g. the game never echoed one back).
+        foreach (var k in reprinted.Where(kv => DateTime.Now - kv.Value > TimeSpan.FromMinutes(1)).Select(kv => kv.Key).ToList())
+            reprinted.TryRemove(k, out _);
     }
 
     // ---------------------------------------------------------------- party finder
