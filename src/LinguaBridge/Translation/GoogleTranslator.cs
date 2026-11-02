@@ -15,10 +15,11 @@ public sealed class GoogleTranslator(HttpClient http) : ITranslator
 {
     public string Name => "Google";
 
-    public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, CancellationToken ct)
+    public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         var url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
                   $"&sl={source?.GoogleCode ?? "auto"}&tl={target.GoogleCode}&q={Uri.EscapeDataString(ProtectedText.Plain(text))}";
+        _ = options; // Google has no context/glossary support
 
         using var response = await http.GetAsync(url, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

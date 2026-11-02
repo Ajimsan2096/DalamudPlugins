@@ -28,7 +28,16 @@ Repositorio personal de plugins de Dalamud para FFXIV.
 - **Party Finder**: clic derecho en un anuncio → *Translate description*.
 - **Barra de servidor** (arriba a la derecha): `LB EN/FR` — clic izquierdo activa/desactiva, clic derecho abre la ventana.
 - **Motores**: DeepL (la mejor calidad para EN/FR, clave gratuita de 500.000 caracteres/mes en deepl.com → API Free) admite **varias claves**: si una agota su cuota mensual (o no es válida) se usa la siguiente para el mismo mensaje, y solo cuando fallan todas pasa automáticamente a Google; o Google directamente (sin clave).
-- Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/tr`.
+- **Modo rol (RP/ERP)** — `/lb rp`, casilla **RP** en la ventana o pestaña *Roleplay*:
+  - Contexto para DeepL de prosa en personaje (tono, voz, escenas maduras sin suavizar).
+  - Conserva `*acciones*`, `"diálogo"` / `« diálogo »`, `((OOC))` y `[OOC ...]`.
+  - Traduce emotes (`/em`) usando el nombre del personaje como sujeto; `/tr /em sonríe` funciona.
+  - Los posts de varias líneas no se descartan como spam de macro; los textos largos se envían en varias líneas `(1/2)`.
+  - Notas de escena/personajes para DeepL y formalidad propia para RP.
+- **Contexto de conversación**: las últimas líneas del mismo chat se mandan a DeepL como contexto (no se factura) → mejores pronombres, género, tu/vous.
+- **Glosario propio** (pestaña *Glossary*): tus traducciones de términos por dirección (EN>FR, FR>EN…), subidas automáticamente como glosarios de DeepL en cada clave.
+- **Nombres protegidos automáticamente**: el remitente y tu personaje nunca se traducen.
+- Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/lb rp` · `/tr`.
 
 ## Desarrollo
 

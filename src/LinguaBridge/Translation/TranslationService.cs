@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,6 +9,10 @@ namespace LinguaBridge.Translation;
 
 public sealed record TranslationResult(string Original, string Text, Language Source, Language Target, string Engine);
 
+/// <param name="History">Recent lines of the same conversation ("Name: text"), used as DeepL context.</param>
+/// <param name="Names">Character names in play (sender, you) that must never be translated.</param>
+public sealed record TranslateRequestContext(string? History = null, IReadOnlyList<string>? Names = null);
+
 /// <summary>
 /// Picks the direction (A to B or B to A), calls the selected engine (falling back to Google when
 /// DeepL fails), protects names/links, and caches results so repeated messages cost nothing.
@@ -15,6 +20,9 @@ public sealed record TranslationResult(string Original, string Text, Language So
 public sealed class TranslationService : IDisposable
 {
     private const int CacheCapacity = 512;
+
+    /// <summary>RP shorthand kept as-is in roleplay mode.</summary>
+    private static readonly string[] RoleplayShorthand = { "OOC", "IC", "RP", "ERP", "LRP", "MRP", "HRP", "AFK", "BRB" };
 
     private readonly Func<Configuration> config;
     private readonly HttpClient http;
@@ -52,7 +60,8 @@ public sealed class TranslationService : IDisposable
     /// target language, or is in a language outside the pair and the settings say to ignore it.
     /// The text may contain <see cref="ProtectedText"/> spans.
     /// </summary>
-    public async Task<TranslationResult?> TranslateAsync(string text, Language? forcedTarget = null, bool translateOthers = false)
+    public async Task<TranslationResult?> TranslateAsync(
+        string text, Language? forcedTarget = null, bool translateOthers = false, TranslateRequestContext? context = null)
     {
         var cfg = config();
         var a = Languages.Get(cfg.LanguageA);
@@ -60,16 +69,32 @@ public sealed class TranslationService : IDisposable
         var preferred = Languages.Get(cfg.PreferredLanguage);
         var engine = Engine;
 
-        text = ProtectedText.ProtectTerms(text, cfg.ProtectedTerms);
+        var protectedTerms = new List<string>(cfg.ProtectedTerms);
+        if (cfg.AutoProtectNames)
+        {
+            foreach (var name in context?.Names ?? Array.Empty<string>())
+            {
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+                protectedTerms.Add(name.Trim());
+                // "Eliza Yevon" is often written as just "Eliza" in RP.
+                protectedTerms.AddRange(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Where(p => p.Length >= 3));
+            }
+            if (cfg.RoleplayMode)
+                protectedTerms.AddRange(RoleplayShorthand);
+        }
+        text = ProtectedText.ProtectTerms(text, protectedTerms);
+        var options = new TranslateOptions(cfg.ContextLines > 0 ? context?.History : null, cfg.RoleplayMode);
 
-        var key = $"{engine.Name}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{preferred.Code}|{translateOthers}|{text}";
+        // Context is deliberately not part of the key: same line, same translation (and fewer billed characters).
+        var key = $"{engine.Name}|{cfg.RoleplayMode}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{preferred.Code}|{translateOthers}|{text}";
         if (TryGetCached(key, out var cached))
             return cached;
 
         await concurrency.WaitAsync(lifetime.Token).ConfigureAwait(false);
         try
         {
-            var result = await TranslateUncachedAsync(engine, text, a, b, preferred, forcedTarget, translateOthers, lifetime.Token)
+            var result = await TranslateUncachedAsync(engine, text, a, b, preferred, forcedTarget, translateOthers, options, lifetime.Token)
                              .ConfigureAwait(false);
             AddCached(key, result);
             return result;
@@ -82,7 +107,7 @@ public sealed class TranslationService : IDisposable
 
     private async Task<TranslationResult?> TranslateUncachedAsync(
         ITranslator engine, string text, Language a, Language b, Language preferred, Language? forcedTarget,
-        bool translateOthers, CancellationToken ct)
+        bool translateOthers, TranslateOptions options, CancellationToken ct)
     {
         var detectable = ProtectedText.WithoutProtected(text);
 
@@ -91,7 +116,7 @@ public sealed class TranslationService : IDisposable
             var guess = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code, forcedTarget.Code });
             if (guess == forcedTarget.Code)
                 return null;
-            var forced = await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, ct);
+            var forced = await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, options, ct);
             // Incoming one-way mode: a third language is only shown if the user asked for those.
             if (forced != null && !translateOthers && forced.Source.Code != a.Code && forced.Source.Code != b.Code)
                 return null;
@@ -101,14 +126,14 @@ public sealed class TranslationService : IDisposable
         // 1) Cheap offline guess between the two languages of the pair.
         var detected = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code });
         if (detected == a.Code)
-            return await Make(engine, text, a, b, ct);
+            return await Make(engine, text, a, b, options, ct);
         if (detected == b.Code)
-            return await Make(engine, text, b, a, ct);
+            return await Make(engine, text, b, a, options, ct);
 
         // 2) Unsure: ask the engine to translate to B with auto-detection and look at what it detected.
-        var first = await CallAsync(engine, text, null, b, ct);
+        var first = await CallAsync(engine, text, null, b, options, ct);
         if (first.Result.DetectedSource == b.Code)
-            return await Make(engine, text, b, a, ct);
+            return await Make(engine, text, b, a, options, ct);
 
         var isA = first.Result.DetectedSource == a.Code;
         if (!isA && !translateOthers)
@@ -119,7 +144,7 @@ public sealed class TranslationService : IDisposable
         {
             if (source.Code == preferred.Code)
                 return null;
-            return await Make(engine, text, null, preferred, ct);
+            return await Make(engine, text, null, preferred, options, ct);
         }
 
         if (IsSame(first.Result.Text, text))
@@ -127,10 +152,11 @@ public sealed class TranslationService : IDisposable
         return new TranslationResult(ProtectedText.Plain(text), first.Result.Text, source, b, first.Engine);
     }
 
-    private async Task<TranslationResult?> Make(ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
+    private async Task<TranslationResult?> Make(
+        ITranslator engine, string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         var input = source == null ? text : Prepare(text, source.Code);
-        var (r, used) = await CallAsync(engine, input, source, target, ct);
+        var (r, used) = await CallAsync(engine, input, source, target, options, ct);
         if (source == null && r.DetectedSource == target.Code)
             return null;
         if (IsSame(r.Text, text) || IsSame(r.Text, input))
@@ -146,18 +172,18 @@ public sealed class TranslationService : IDisposable
         config().ExpandAbbreviations ? ProtectedText.MapUnprotected(text, part => Slang.Expand(part, languageCode)) : text;
 
     private async Task<(EngineResult Result, string Engine)> CallAsync(
-        ITranslator engine, string text, Language? source, Language target, CancellationToken ct)
+        ITranslator engine, string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         Interlocked.Add(ref charactersSent, text.Length);
         try
         {
-            return (await engine.TranslateAsync(text, source, target, ct).ConfigureAwait(false), engine.Name);
+            return (await engine.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false), engine.Name);
         }
         catch (Exception ex) when (engine == DeepL && config().FallbackToGoogle && !ct.IsCancellationRequested &&
                                    ex is TranslationException or HttpRequestException or TaskCanceledException)
         {
             FallbackUsed?.Invoke(ex is TranslationException ? ex.Message : "DeepL did not respond");
-            return (await Google.TranslateAsync(text, source, target, ct).ConfigureAwait(false), "Google (fallback)");
+            return (await Google.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false), "Google (fallback)");
         }
     }
 

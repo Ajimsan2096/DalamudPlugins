@@ -25,6 +25,7 @@ public sealed class ConfigWindow : Window
         ("Cross-world Linkshells 1-8",
             new[] { XivChatType.CrossLinkShell1 }
                 .Concat(Enumerable.Range(0, 7).Select(i => (XivChatType)((int)XivChatType.CrossLinkShell2 + i))).ToArray()),
+        ("Emotes (/em) - always on in roleplay mode", new[] { XivChatType.CustomEmote }),
         ("Novice Network", new[] { XivChatType.NoviceNetwork }),
         ("PvP Team", new[] { XivChatType.PvPTeam }),
     };
@@ -40,6 +41,13 @@ public sealed class ConfigWindow : Window
     private readonly Plugin plugin;
     private bool showKey;
     private string newKey = string.Empty;
+    private string sceneNotes = string.Empty;
+    private bool sceneNotesLoaded;
+    private int glossaryFrom;
+    private int glossaryTo = 1;
+    private string newSource = string.Empty;
+    private string newTarget = string.Empty;
+    private string glossaryFilter = string.Empty;
     private bool checkingUsage;
     private string whitelistText;
     private string protectedText;
@@ -64,6 +72,10 @@ public sealed class ConfigWindow : Window
             if (tab) DrawLanguages();
         using (var tab = ImRaii.TabItem("Chat"))
             if (tab) DrawChat();
+        using (var tab = ImRaii.TabItem("Roleplay"))
+            if (tab) DrawRoleplay();
+        using (var tab = ImRaii.TabItem("Glossary"))
+            if (tab) DrawGlossary();
         using (var tab = ImRaii.TabItem("Help"))
             if (tab) DrawHelp();
     }
@@ -423,6 +435,199 @@ public sealed class ConfigWindow : Window
             plugin.SaveConfig();
     }
 
+    private void DrawRoleplay()
+    {
+        var cfg = plugin.Configuration;
+        var changed = false;
+
+        var rp = cfg.RoleplayMode;
+        if (ImGui.Checkbox("Roleplay mode", ref rp))
+            plugin.SetRoleplayMode(rp, announce: false);
+        ImGui.SameLine();
+        ImGui.TextDisabled("(/lb rp toggles it)");
+        ImGui.TextWrapped("When on:\n" +
+                          " - DeepL is told it is translating in-character prose (tone, voice, mature scenes untouched).\n" +
+                          " - *actions*, \"speech\" / « speech », ((OOC)) and [OOC ...] keep their markers.\n" +
+                          " - Emotes (/em) are translated, using the character name as subject; /tr /em works too.\n" +
+                          " - Multi-line posts are not dropped as macro spam, and posts up to 600 characters are read.\n" +
+                          " - IC, OOC, RP, ERP... and character names stay untouched.");
+
+        ImGui.Separator();
+        var f = Array.FindIndex(Formalities, x => x.Value == cfg.RpFormality);
+        if (f < 0) f = 2;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.Combo("Formality in RP", ref f, Formalities.Select(x => x.Label).ToArray(), Formalities.Length))
+        {
+            cfg.RpFormality = Formalities[f].Value;
+            plugin.Translator.ClearCache();
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("\"Engine default\" lets DeepL pick tu/vous from the conversation context, which is " +
+                                   "usually right in RP. Force \"vous\" for courtly / noble characters.");
+
+        var lines = cfg.ContextLines;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderInt("Conversation lines used as context", ref lines, 0, 10))
+        {
+            cfg.ContextLines = lines;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("The previous lines of the same chat (party, a tell, say + emotes...) are sent to DeepL " +
+                                   "as context. DeepL does not bill context characters. It fixes pronouns, gender " +
+                                   "agreement (il/elle, beau/belle), tu/vous and ambiguous words. Applies outside RP too.");
+
+        var names = cfg.AutoProtectNames;
+        if (ImGui.Checkbox("Never translate character names (sender and you)", ref names))
+        {
+            cfg.AutoProtectNames = names;
+            changed = true;
+        }
+
+        if (!sceneNotesLoaded)
+        {
+            sceneNotes = cfg.RpSceneNotes;
+            sceneNotesLoaded = true;
+        }
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Scene / character notes for DeepL (optional, not billed):");
+        ImGuiComponents.HelpMarker("Short facts that help the translation, in any language. Examples:\n" +
+                                   "\"Rukenu is a male Miqo'te knight; Eliza is a female Au Ra mage. They speak " +
+                                   "formally to each other. Setting: Ishgard, winter.\"");
+        if (ImGui.InputTextMultiline("##scene", ref sceneNotes, 600, new Vector2(-1, ImGui.GetTextLineHeight() * 4)))
+        {
+            cfg.RpSceneNotes = sceneNotes;
+            changed = true;
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Sending long posts");
+        var split = cfg.SplitLongMessages;
+        if (ImGui.Checkbox("Split translations longer than the chat limit into several lines", ref split))
+        {
+            cfg.SplitLongMessages = split;
+            changed = true;
+        }
+        if (cfg.SplitLongMessages)
+        {
+            var markers = cfg.SplitMarkers;
+            if (ImGui.Checkbox("Add (1/2), (2/2) markers", ref markers))
+            {
+                cfg.SplitMarkers = markers;
+                changed = true;
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1f, 0.75f, 0.35f, 1f), "Privacy");
+        ImGui.TextWrapped("Translated text is sent to DeepL or Google. According to DeepL, texts sent with the free API " +
+                          "may be kept and used to improve their service, while DeepL Pro deletes them after translation. " +
+                          "Google's free endpoint gives no guarantees. Keep that in mind for private or intimate scenes " +
+                          "(you can pause translation with the LB switch or /lb off at any time).");
+
+        if (changed)
+            plugin.SaveConfig();
+    }
+
+    private void DrawGlossary()
+    {
+        var cfg = plugin.Configuration;
+        var names = Languages.All.Select(l => l.Code).ToArray();
+        var changed = false;
+
+        ImGui.TextWrapped("Your own translations for specific words: lore terms, nicknames, pet names, RP slang, " +
+                          "how intimate or emotional words should be rendered... DeepL always uses these when it " +
+                          "knows the source language. They are uploaded to your DeepL account as glossaries " +
+                          "(one per direction and per key) automatically. DeepL only.");
+        ImGui.TextDisabled($"Status: {plugin.Translator.DeepL.GlossaryStatus}");
+        ImGui.Spacing();
+
+        ImGui.SetNextItemWidth(60);
+        ImGui.Combo("##gfrom", ref glossaryFrom, names, names.Length);
+        ImGui.SameLine();
+        ImGui.TextUnformatted(">");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(60);
+        ImGui.Combo("##gto", ref glossaryTo, names, names.Length);
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(150);
+        ImGui.InputTextWithHint("##gsrc", "word or phrase", ref newSource, 100);
+        ImGui.SameLine();
+        ImGui.TextUnformatted("=");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(150);
+        ImGui.InputTextWithHint("##gdst", "translation", ref newTarget, 100);
+        ImGui.SameLine();
+        using (ImRaii.Disabled(string.IsNullOrWhiteSpace(newSource) || string.IsNullOrWhiteSpace(newTarget) ||
+                               glossaryFrom == glossaryTo))
+        {
+            if (ImGui.Button("Add"))
+            {
+                cfg.Glossary.RemoveAll(e => e.From == names[glossaryFrom] && e.To == names[glossaryTo] &&
+                                            e.Source.Equals(newSource.Trim(), StringComparison.Ordinal));
+                cfg.Glossary.Add(new GlossaryEntry
+                {
+                    From = names[glossaryFrom], To = names[glossaryTo], Source = newSource.Trim(), Target = newTarget.Trim(),
+                });
+                newSource = newTarget = string.Empty;
+                changed = true;
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Swap"))
+            (glossaryFrom, glossaryTo) = (glossaryTo, glossaryFrom);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Each direction is a separate glossary: add EN>FR and FR>EN entries separately.");
+
+        ImGui.SetNextItemWidth(200);
+        ImGui.InputTextWithHint("##gfilter", "filter...", ref glossaryFilter, 50);
+        ImGui.SameLine();
+        ImGui.TextDisabled($"{cfg.Glossary.Count} entries");
+
+        var remove = -1;
+        using (var table = ImRaii.Table("glossary", 4, ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY | ImGuiTableFlags.BordersInnerH,
+                                        new Vector2(-1, -1)))
+        {
+            if (table)
+            {
+                ImGui.TableSetupColumn("Dir", ImGuiTableColumnFlags.WidthFixed, 60);
+                ImGui.TableSetupColumn("Source");
+                ImGui.TableSetupColumn("Translation");
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 25);
+                ImGui.TableHeadersRow();
+                for (var i = 0; i < cfg.Glossary.Count; i++)
+                {
+                    var e = cfg.Glossary[i];
+                    if (glossaryFilter.Length > 0 &&
+                        !e.Source.Contains(glossaryFilter, StringComparison.OrdinalIgnoreCase) &&
+                        !e.Target.Contains(glossaryFilter, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    using var id = ImRaii.PushId(i);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted($"{e.From}>{e.To}");
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(e.Source);
+                    ImGui.TableNextColumn();
+                    ImGui.TextUnformatted(e.Target);
+                    ImGui.TableNextColumn();
+                    if (ImGui.SmallButton("X"))
+                        remove = i;
+                }
+            }
+        }
+        if (remove >= 0)
+        {
+            cfg.Glossary.RemoveAt(remove);
+            changed = true;
+        }
+
+        if (changed)
+        {
+            plugin.Translator.ClearCache();
+            plugin.SaveConfig();
+        }
+    }
+
     private void DrawHelp()
     {
         if (ImGui.Button("Open setup wizard"))
@@ -440,7 +645,7 @@ public sealed class ConfigWindow : Window
             "  /tr :en /fc Merci beaucoup     -> force English\n\n" +
             "/lb (or /linguabridge) opens the history window: press \"Reply\" on a message to answer it translated in " +
             "the same channel, or use the compose box with Preview to check the meaning before sending.\n" +
-            "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb wizard reruns the setup.\n\n" +
+            "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb rp toggles roleplay mode, /lb wizard reruns the setup.\n\n" +
             "Party Finder: right-click a listing > \"Translate description\".\n\n" +
             "Tip: your friends need the plugin too if they want to read your messages in their language; or simply use /tr " +
             "so they receive your text already translated.");

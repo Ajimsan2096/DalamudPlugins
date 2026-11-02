@@ -55,6 +55,8 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private readonly ConcurrentQueue<HistoryEntry> history = new();
     private readonly Dictionary<string, long> lastMessageBySender = new();
+    private readonly ConversationLog conversations = new();
+    private string? lastTellPartner;
     private DateTime lastErrorPrinted = DateTime.MinValue;
     private DateTime lastFallbackPrinted = DateTime.MinValue;
 
@@ -70,6 +72,7 @@ public sealed partial class Plugin : IDalamudPlugin
             PluginInterface.SavePluginConfig(Configuration);
         Translator.FallbackUsed += OnFallbackUsed;
         Translator.DeepL.KeyUnavailable += OnDeepLKeyUnavailable;
+        Translator.DeepL.SaveRequested += OnGlossarySaved;
 
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
@@ -80,7 +83,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
         var mainHelp = new CommandInfo(OnMainCommand)
         {
-            HelpMessage = "Open the LinguaBridge window. Add: config | wizard | on | off | toggle.",
+            HelpMessage = "Open the LinguaBridge window. Add: config | wizard | on | off | toggle | rp (roleplay mode).",
         };
         CommandManager.AddHandler(MainCommand, mainHelp);
         CommandManager.AddHandler(ShortCommand, new CommandInfo(OnMainCommand) { HelpMessage = "Short for /linguabridge.", ShowInHelp = false });
@@ -115,6 +118,7 @@ public sealed partial class Plugin : IDalamudPlugin
         windowSystem.RemoveAllWindows();
         Translator.FallbackUsed -= OnFallbackUsed;
         Translator.DeepL.KeyUnavailable -= OnDeepLKeyUnavailable;
+        Translator.DeepL.SaveRequested -= OnGlossarySaved;
         Translator.Dispose();
     }
 
@@ -135,6 +139,17 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         history.Enqueue(entry);
         while (history.Count > Math.Max(10, Configuration.HistorySize) && history.TryDequeue(out _)) { }
+    }
+
+    public void SetRoleplayMode(bool enabled, bool announce)
+    {
+        Configuration.RoleplayMode = enabled;
+        Translator.ClearCache();
+        SaveConfig();
+        if (announce)
+            ChatGui.Print(enabled
+                ? "Roleplay mode ON: emotes, *actions*, \"speech\" and ((OOC)) are handled for RP."
+                : "Roleplay mode OFF.", Tag);
     }
 
     public void SetIncomingEnabled(bool enabled, bool announce)
@@ -160,7 +175,7 @@ public sealed partial class Plugin : IDalamudPlugin
         var on = Configuration.IncomingEnabled;
         dtrEntry.Text = new SeStringBuilder()
                         .AddUiForeground(on ? (ushort)45 : (ushort)4)
-                        .AddText(on ? $"LB {Configuration.LanguageA}/{Configuration.LanguageB}" : "LB off")
+                        .AddText(on ? $"LB {(Configuration.RoleplayMode ? "RP " : "")}{Configuration.LanguageA}/{Configuration.LanguageB}" : "LB off")
                         .AddUiForegroundOff()
                         .Build();
         dtrEntry.Tooltip = new SeString(new TextPayload(
@@ -197,6 +212,9 @@ public sealed partial class Plugin : IDalamudPlugin
             case "toggle":
                 SetIncomingEnabled(!Configuration.IncomingEnabled, announce: true);
                 break;
+            case "rp" or "roleplay":
+                SetRoleplayMode(!Configuration.RoleplayMode, announce: true);
+                break;
             default:
                 ToggleMainUi();
                 break;
@@ -226,27 +244,47 @@ public sealed partial class Plugin : IDalamudPlugin
     {
         try
         {
-            var result = await Translator.TranslateAsync(text, target, translateOthers: true).ConfigureAwait(false);
-            var body = ChatSender.Clean(result?.Text ?? text);
-            var line = channelPrefix + body;
+            var me = PlayerState.CharacterName;
+            var isEmote = IsEmotePrefix(channelPrefix);
+            var convo = ConversationKeyForPrefix(channelPrefix);
+            var names = new List<string> { me };
+            if (convo?.StartsWith("tell:", StringComparison.Ordinal) == true)
+                names.Add(convo[5..]);
+            var ctx = new TranslateRequestContext(convo == null ? null : conversations.Recent(convo, Configuration.ContextLines), names);
 
-            await Framework.RunOnFrameworkThread(() =>
+            // Emotes are third-person fragments ("smiles softly"): give the engine a subject, then drop it again.
+            var input = isEmote && !string.IsNullOrEmpty(me) ? ProtectedText.Wrap(me) + " " + text : text;
+            var result = await Translator.TranslateAsync(input, target, translateOthers: true, ctx).ConfigureAwait(false);
+            var translated = result?.Text ?? text;
+            if (isEmote && !string.IsNullOrEmpty(me))
+                translated = StripLeadingName(translated, me);
+            var body = ChatSender.Clean(translated);
+
+            var lines = Configuration.SplitLongMessages
+                ? ChatSender.Split(channelPrefix, body, Configuration.SplitMarkers)
+                : new List<string> { channelPrefix + body };
+
+            for (var i = 0; i < lines.Count; i++)
             {
-                ChatSender.Send(line);
-                if (Configuration.EchoOriginalOnSend && result != null)
-                    ChatGui.Print(new XivChatEntry
-                    {
-                        Type = XivChatType.Echo,
-                        Message = new SeStringBuilder()
-                                  .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
-                                  .AddText($"(original) {ChatSender.FoldForGame(text)}")
-                                  .Build(),
-                    });
-            }).ConfigureAwait(false);
+                var line = lines[i];
+                await Framework.RunOnFrameworkThread(() => ChatSender.Send(line)).ConfigureAwait(false);
+                if (i < lines.Count - 1)
+                    await Task.Delay(1200).ConfigureAwait(false); // stay clear of the game's chat spam limit
+            }
+
+            if (Configuration.EchoOriginalOnSend && result != null)
+                await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+                {
+                    Type = XivChatType.Echo,
+                    Message = new SeStringBuilder()
+                              .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
+                              .AddText($"(original) {ChatSender.FoldForGame(text)}")
+                              .Build(),
+                })).ConfigureAwait(false);
 
             if (result != null)
                 AddHistory(new HistoryEntry(DateTime.Now, channelPrefix.Trim() is { Length: > 0 } p ? p : "current", "You",
-                                            result, true, null));
+                                            result with { Text = translated }, true, null));
             return true;
         }
         catch (Exception ex)
@@ -254,6 +292,45 @@ public sealed partial class Plugin : IDalamudPlugin
             ReportError(ex, force: true);
             return false;
         }
+    }
+
+    private static bool IsEmotePrefix(string prefix) =>
+        prefix.Trim().Equals("/em", StringComparison.OrdinalIgnoreCase) ||
+        prefix.Trim().Equals("/emote", StringComparison.OrdinalIgnoreCase);
+
+    private static string StripLeadingName(string text, string name)
+    {
+        var t = text.TrimStart();
+        if (t.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+            return t[name.Length..].TrimStart(' ', ',');
+        var first = name.Split(' ')[0];
+        if (first.Length >= 3 && t.StartsWith(first + " ", StringComparison.OrdinalIgnoreCase))
+            return t[first.Length..].TrimStart();
+        return t;
+    }
+
+    /// <summary>Conversation that a "/p ", "/t Name@World " ... prefix writes to (for context), or null.</summary>
+    private string? ConversationKeyForPrefix(string prefix)
+    {
+        var p = prefix.Trim();
+        if (p.Length == 0)
+            return null;
+        var cmd = p.Split(' ')[0].ToLowerInvariant();
+        switch (cmd)
+        {
+            case "/t" or "/tell":
+                var target = p[cmd.Length..].Trim();
+                var at = target.IndexOf('@');
+                return target.StartsWith('<') ? null : "tell:" + (at > 0 ? target[..at] : target);
+            case "/r" or "/reply":
+                return lastTellPartner == null ? null : "tell:" + lastTellPartner;
+            case "/em" or "/emote" or "/s" or "/say":
+                return ConversationLog.KeyFor(XivChatType.Say, null);
+        }
+        foreach (XivChatType t in Enum.GetValues(typeof(XivChatType)))
+            if (ReplyPrefixFor(t, string.Empty, null)?.Trim() == p)
+                return ConversationLog.KeyFor(t, null);
+        return null;
     }
 
     // ---------------------------------------------------------------- incoming chat
@@ -267,7 +344,8 @@ public sealed partial class Plugin : IDalamudPlugin
                 return;
 
             var type = message.LogKind;
-            if (!cfg.Channels.Contains(type))
+            var isEmote = type == XivChatType.CustomEmote;
+            if (!cfg.Channels.Contains(type) && !(isEmote && cfg.RoleplayMode))
                 return;
             if (cfg.PauseInCombat && Condition[ConditionFlag.InCombat])
                 return;
@@ -278,11 +356,21 @@ public sealed partial class Plugin : IDalamudPlugin
             var isOwn = type == XivChatType.TellOutgoing ||
                         message.SourceKind == XivChatRelationKind.LocalPlayer ||
                         (!string.IsNullOrEmpty(me) && senderName.EndsWith(me, StringComparison.Ordinal));
-            if (isOwn && !cfg.TranslateOwnMessages)
+            var plainText = message.Message.TextValue.Trim();
+            if (OwnTagRegex().IsMatch(plainText))
                 return;
 
-            var plainText = message.Message.TextValue.Trim();
-            if (plainText.Length > cfg.MaxMessageLength || OwnTagRegex().IsMatch(plainText))
+            // Every line of the conversation (yours included) becomes context for the next translations.
+            var convoName = type is XivChatType.TellIncoming or XivChatType.TellOutgoing ? senderName : null;
+            if (type == XivChatType.TellIncoming)
+                lastTellPartner = senderName;
+            var convo = ConversationLog.KeyFor(type, convoName);
+            var history = conversations.Recent(convo, cfg.ContextLines);
+            conversations.Add(convo, isOwn ? (string.IsNullOrEmpty(me) ? "Me" : me) : senderName, plainText, isEmote);
+
+            if (isOwn && !cfg.TranslateOwnMessages)
+                return;
+            if (plainText.Length > (cfg.RoleplayMode ? 600 : cfg.MaxMessageLength))
                 return;
 
             var text = MessageReader.Read(message.Message);
@@ -293,13 +381,18 @@ public sealed partial class Plugin : IDalamudPlugin
                 !cfg.PlayerWhitelist.Any(p => senderName.Contains(p.Trim(), StringComparison.OrdinalIgnoreCase)))
                 return;
 
-            if (cfg.FilterMacroSpam && IsMacroSpam(senderName))
+            // RP posts often arrive as several quick lines: never treat them as macro spam in RP mode.
+            if (cfg.FilterMacroSpam && !cfg.RoleplayMode && IsMacroSpam(senderName))
                 return;
 
             var world = player?.World.ValueNullable?.Name.ToString();
             var reply = ReplyPrefixFor(type, senderName, world);
             var senderBytes = message.Sender.Encode();
-            _ = HandleIncomingAsync(type, senderName, senderBytes, text, reply);
+            var names = new List<string> { senderName };
+            if (!string.IsNullOrEmpty(me))
+                names.Add(me);
+            var ctx = new TranslateRequestContext(history, names);
+            _ = HandleIncomingAsync(type, senderName, senderBytes, text, reply, ctx);
         }
         catch (Exception ex)
         {
@@ -318,17 +411,23 @@ public sealed partial class Plugin : IDalamudPlugin
         return spam;
     }
 
-    private async Task HandleIncomingAsync(XivChatType type, string senderName, byte[] senderBytes, string text, string? reply)
+    private async Task HandleIncomingAsync(
+        XivChatType type, string senderName, byte[] senderBytes, string text, string? reply, TranslateRequestContext ctx)
     {
         try
         {
+            // Emotes are "<Name> smiles softly": translate with the name as subject, then remove it again.
+            var isEmote = type == XivChatType.CustomEmote;
+            var input = isEmote ? ProtectedText.Wrap(senderName) + " " + text : text;
             var result = Configuration.IncomingOnlyToPreferred
-                ? await Translator.TranslateAsync(text, Languages.Get(Configuration.PreferredLanguage),
-                                                  Configuration.TranslateOtherLanguages).ConfigureAwait(false)
-                : await Translator.TranslateAsync(text, translateOthers: Configuration.TranslateOtherLanguages)
+                ? await Translator.TranslateAsync(input, Languages.Get(Configuration.PreferredLanguage),
+                                                  Configuration.TranslateOtherLanguages, ctx).ConfigureAwait(false)
+                : await Translator.TranslateAsync(input, translateOthers: Configuration.TranslateOtherLanguages, context: ctx)
                                          .ConfigureAwait(false);
             if (result == null)
                 return;
+            if (isEmote)
+                result = result with { Text = StripLeadingName(result.Text, senderName) };
 
             AddHistory(new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply));
 
@@ -430,6 +529,8 @@ public sealed partial class Plugin : IDalamudPlugin
             ChatGui.PrintError($"{reason}. Using Google until DeepL works again.", Tag));
     }
 
+    private void OnGlossarySaved() => _ = Framework.RunOnFrameworkThread(() => PluginInterface.SavePluginConfig(Configuration));
+
     private void OnDeepLKeyUnavailable(int index, string reason)
     {
         var next = index + 2 <= Translator.DeepL.Keys.Count ? $"trying key #{index + 2}" : "trying the remaining keys";
@@ -464,6 +565,7 @@ public sealed partial class Plugin : IDalamudPlugin
         XivChatType.Party or XivChatType.CrossParty => "/p ",
         XivChatType.Alliance => "/a ",
         XivChatType.FreeCompany => "/fc ",
+        XivChatType.CustomEmote => "/em ",
         XivChatType.NoviceNetwork => "/n ",
         XivChatType.PvPTeam => "/pvpteam ",
         XivChatType.TellIncoming => string.IsNullOrEmpty(world) ? "/r " : $"/t {sender}@{world} ",
@@ -479,6 +581,7 @@ public sealed partial class Plugin : IDalamudPlugin
         XivChatType.TellOutgoing => "Tell (out)",
         XivChatType.CrossParty => "Party",
         XivChatType.FreeCompany => "FC",
+        XivChatType.CustomEmote => "Emote",
         >= XivChatType.Ls1 and <= XivChatType.Ls8 => $"LS{type - XivChatType.Ls1 + 1}",
         XivChatType.CrossLinkShell1 => "CWLS1",
         >= XivChatType.CrossLinkShell2 and <= XivChatType.CrossLinkShell8 => $"CWLS{type - XivChatType.CrossLinkShell2 + 2}",

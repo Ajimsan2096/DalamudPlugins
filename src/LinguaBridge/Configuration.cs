@@ -80,6 +80,29 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Add "Translate" to the Party Finder listing context menu.</summary>
     public bool PartyFinderMenu { get; set; } = true;
 
+    // --- Roleplay & DeepL customisation ---
+    /// <summary>
+    /// Roleplay mode: RP-aware DeepL context, *action* / "speech" / ((OOC)) preserved, emotes translated,
+    /// macro-spam filter off (RP posts often arrive as several quick lines), long posts split when sending.
+    /// </summary>
+    public bool RoleplayMode { get; set; } = false;
+    /// <summary>Formality used in roleplay mode ("default" lets DeepL follow the scene).</summary>
+    public string RpFormality { get; set; } = "default";
+    /// <summary>Extra description of your setting/characters sent to DeepL as context in RP mode (not billed).</summary>
+    public string RpSceneNotes { get; set; } = string.Empty;
+    /// <summary>Last N lines of the same conversation are sent to DeepL as context (not billed). 0 = off.</summary>
+    public int ContextLines { get; set; } = 4;
+    /// <summary>Never translate the sender's name, your own name, and RP shorthand (IC, OOC...).</summary>
+    public bool AutoProtectNames { get; set; } = true;
+    /// <summary>Split translated messages longer than the 500-byte chat limit into several lines.</summary>
+    public bool SplitLongMessages { get; set; } = true;
+    /// <summary>Add (1/2), (2/2) markers when splitting.</summary>
+    public bool SplitMarkers { get; set; } = true;
+    /// <summary>Your own term translations, uploaded to DeepL as glossaries (one per language direction).</summary>
+    public List<GlossaryEntry> Glossary { get; set; } = new();
+    /// <summary>Internal: DeepL glossary ids per key fingerprint and direction ("hash:id").</summary>
+    public Dictionary<string, string> DeepLGlossaryIds { get; set; } = new();
+
     /// <summary>Moves settings from older versions into their current shape. Returns true if anything changed.</summary>
     public bool Migrate()
     {
@@ -98,4 +121,13 @@ public sealed class Configuration : IPluginConfiguration
         }
         return changed;
     }
+}
+
+[Serializable]
+public sealed class GlossaryEntry
+{
+    public string From { get; set; } = "EN";
+    public string To { get; set; } = "FR";
+    public string Source { get; set; } = string.Empty;
+    public string Target { get; set; } = string.Empty;
 }

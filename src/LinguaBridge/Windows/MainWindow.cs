@@ -16,7 +16,7 @@ public sealed class MainWindow : Window
 {
     private static readonly (string Label, string Prefix)[] SendChannels =
     {
-        ("Current channel", ""), ("Say", "/s "), ("Party", "/p "), ("Alliance", "/a "), ("Free Company", "/fc "),
+        ("Current channel", ""), ("Say", "/s "), ("Emote (/em)", "/em "), ("Party", "/p "), ("Alliance", "/a "), ("Free Company", "/fc "),
         ("Reply (last tell)", "/r "), ("Linkshell 1", "/l1 "), ("Linkshell 2", "/l2 "), ("Linkshell 3", "/l3 "),
         ("Cross-world LS 1", "/cwl1 "), ("Cross-world LS 2", "/cwl2 "), ("Cross-world LS 3", "/cwl3 "),
         ("Shout", "/sh "), ("Yell", "/y "), ("Echo (test, only you)", "/e "),
@@ -59,6 +59,12 @@ public sealed class MainWindow : Window
         if (ImGui.Checkbox("Translate chat", ref enabled))
             plugin.SetIncomingEnabled(enabled, announce: false);
         ImGui.SameLine();
+        var rp = cfg.RoleplayMode;
+        if (ImGui.Checkbox("RP", ref rp))
+            plugin.SetRoleplayMode(rp, announce: false);
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Roleplay mode: emotes, *actions*, \"speech\", ((OOC)), long posts. Settings > Roleplay.");
+        ImGui.SameLine();
         ImGui.TextDisabled($"{cfg.LanguageA} <-> {cfg.LanguageB} via {cfg.Engine}");
 
         var buttons = ImGui.CalcTextSize("Settings").X + ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 4 +
@@ -73,7 +79,8 @@ public sealed class MainWindow : Window
 
     private void DrawHistory()
     {
-        var composeHeight = ImGui.GetFrameHeightWithSpacing() * 4 + ImGui.GetTextLineHeightWithSpacing() * 4;
+        var composeHeight = ImGui.GetFrameHeightWithSpacing() * 4 + ImGui.GetTextLineHeightWithSpacing() * 4 +
+                            (plugin.Configuration.RoleplayMode ? ImGui.GetTextLineHeight() * 3 : 0);
         using var child = ImRaii.Child("history", new Vector2(0, -composeHeight), true);
         if (!child)
             return;
@@ -144,8 +151,21 @@ public sealed class MainWindow : Window
             ImGui.SetKeyboardFocusHere();
             focusInput = false;
         }
-        ImGui.SetNextItemWidth(-1);
-        if (ImGui.InputTextWithHint("##input", "Type your message...", ref input, 400, ImGuiInputTextFlags.EnterReturnsTrue) && !busy)
+        bool submitted;
+        if (cfg.RoleplayMode)
+        {
+            // Bigger box for RP posts; long translations are split into several chat lines automatically.
+            submitted = ImGui.InputTextMultiline("##input", ref input, 2000,
+                                                 new Vector2(-1, ImGui.GetTextLineHeight() * 4.5f),
+                                                 ImGuiInputTextFlags.EnterReturnsTrue);
+            ImGui.TextDisabled($"{System.Text.Encoding.UTF8.GetByteCount(input)} bytes (chat line limit 500, longer posts are split)");
+        }
+        else
+        {
+            ImGui.SetNextItemWidth(-1);
+            submitted = ImGui.InputTextWithHint("##input", "Type your message...", ref input, 400, ImGuiInputTextFlags.EnterReturnsTrue);
+        }
+        if (submitted && !busy)
         {
             _ = TranslateAndSend();
             focusInput = true;

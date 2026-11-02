@@ -16,6 +16,13 @@ namespace LinguaBridge.Translation;
 /// </summary>
 public sealed class DeepLTranslator : ITranslator
 {
+    private const string RoleplayContext =
+        "Collaborative in-character roleplay between adult players in Final Fantasy XIV (high-fantasy setting, Eorzea). " +
+        "Messages are literary prose: third-person actions (often between asterisks), spoken dialogue in quotes, and " +
+        "out-of-character notes in double parentheses. Preserve tone, register, emotional nuance, tense and each " +
+        "character's voice; prefer natural, evocative phrasing over literal translation. Scenes may be romantic or " +
+        "mature: translate faithfully, without softening or censoring. Keep character names and lore terms unchanged.";
+
     private const string GameContext =
         "Casual chat message between players in the online game Final Fantasy XIV. " +
         "Players use internet slang and SMS abbreviations (e.g. French jsp = je sais pas, tkt = t'inquiète, mdr = lol). " +
@@ -81,7 +88,7 @@ public sealed class DeepLTranslator : ITranslator
         current = 0;
     }
 
-    public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, CancellationToken ct)
+    public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         var keys = Keys;
         if (keys.Count == 0)
@@ -97,7 +104,7 @@ public sealed class DeepLTranslator : ITranslator
             if (state.BlockedUntil > DateTime.Now)
                 continue;
 
-            var (result, status, error) = await TryKeyAsync(key, text, source, target, ct).ConfigureAwait(false);
+            var (result, status, error) = await TryKeyAsync(key, text, source, target, options, ct).ConfigureAwait(false);
             if (result != null)
             {
                 state.Status = "OK";
@@ -129,25 +136,37 @@ public sealed class DeepLTranslator : ITranslator
     }
 
     private async Task<(EngineResult? Result, int Status, string Error)> TryKeyAsync(
-        string key, string text, Language? source, Language target, CancellationToken ct)
+        string key, string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         var cfg = config();
-        var hasProtected = ProtectedText.HasProtected(text);
+        var xml = RpMarkup.NeedsXml(text, options.Roleplay);
+        var context = options.Roleplay ? RoleplayContext : GameContext;
+        if (options.Roleplay && !string.IsNullOrWhiteSpace(cfg.RpSceneNotes))
+            context += "\nScene notes: " + cfg.RpSceneNotes.Trim();
+        if (!string.IsNullOrWhiteSpace(options.Context))
+            context += "\nPrevious messages in this conversation:\n" + options.Context;
+
         var body = new Dictionary<string, object>
         {
-            ["text"] = new[] { hasProtected ? ProtectedText.ToDeepLXml(text) : text },
+            ["text"] = new[] { xml ? RpMarkup.ToXml(text, options.Roleplay) : text },
             ["target_lang"] = target.Code == "EN" ? cfg.EnglishVariant : target.DeepLTarget,
-            ["context"] = GameContext,
+            ["context"] = context,
         };
         if (source != null)
+        {
             body["source_lang"] = source.DeepLSource;
-        if (hasProtected)
+            var glossary = await GetGlossaryIdAsync(key, source, target, ct).ConfigureAwait(false);
+            if (glossary != null)
+                body["glossary_id"] = glossary;
+        }
+        if (xml)
         {
             body["tag_handling"] = "xml";
             body["ignore_tags"] = new[] { "x" };
         }
-        if (cfg.DeepLFormality != "default")
-            body["formality"] = cfg.DeepLFormality;
+        var formality = options.Roleplay ? cfg.RpFormality : cfg.DeepLFormality;
+        if (formality != "default")
+            body["formality"] = formality;
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl(key)}/v2/translate")
         {
@@ -173,8 +192,116 @@ public sealed class DeepLTranslator : ITranslator
         if (result?.Translations is not { Length: > 0 } t)
             return (null, 0, "empty response");
 
-        var translated = hasProtected ? ProtectedText.FromDeepLXml(t[0].Text) : t[0].Text;
+        var translated = xml ? RpMarkup.FromXml(t[0].Text) : t[0].Text;
         return (new EngineResult(translated, Languages.NormalizeDetected(t[0].DetectedSourceLanguage)), status, string.Empty);
+    }
+
+    // ------------------------------------------------------------------ glossaries
+
+    private readonly SemaphoreSlim glossaryLock = new(1);
+    private readonly Dictionary<string, DateTime> glossaryFailedUntil = new();
+
+    /// <summary>Raised when glossary ids changed and the configuration should be saved.</summary>
+    public event Action? SaveRequested;
+
+    /// <summary>Last glossary sync result, for the settings UI.</summary>
+    public string GlossaryStatus { get; private set; } = "not uploaded yet (uploads on first use)";
+
+    private static string Hash(string s) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(s)))[..12];
+
+    private static string CleanTerm(string s) => s.Replace('\t', ' ').Replace('\n', ' ').Replace('\r', ' ').Trim();
+
+    /// <summary>TSV entries of the user's glossary for one direction, or null when there are none.</summary>
+    public string? GlossaryTsv(string from, string to)
+    {
+        var lines = config().Glossary
+                            .Where(e => e.From == from && e.To == to)
+                            .Select(e => (Src: CleanTerm(e.Source), Dst: CleanTerm(e.Target)))
+                            .Where(e => e.Src.Length > 0 && e.Dst.Length > 0)
+                            .GroupBy(e => e.Src, StringComparer.Ordinal)
+                            .Select(g => $"{g.Key}\t{g.First().Dst}")
+                            .ToList();
+        return lines.Count == 0 ? null : string.Join("\n", lines);
+    }
+
+    /// <summary>
+    /// Returns the DeepL glossary for this key and direction, creating (or replacing) it when the user's
+    /// entries changed. Glossaries live in each DeepL account, so every key gets its own copy.
+    /// Failures never block translation: the text is just translated without the glossary.
+    /// </summary>
+    private async Task<string?> GetGlossaryIdAsync(string key, Language source, Language target, CancellationToken ct)
+    {
+        var tsv = GlossaryTsv(source.Code, target.Code);
+        if (tsv == null)
+            return null;
+
+        var hash = Hash(tsv);
+        var slot = $"{Hash(key)}|{source.Code}>{target.Code}";
+        var ids = config().DeepLGlossaryIds;
+        if (ids.TryGetValue(slot, out var stored) && stored.StartsWith(hash + ":", StringComparison.Ordinal))
+            return stored[(hash.Length + 1)..];
+        lock (glossaryFailedUntil)
+            if (glossaryFailedUntil.TryGetValue(slot, out var until) && until > DateTime.Now)
+                return null;
+
+        await glossaryLock.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            if (ids.TryGetValue(slot, out stored) && stored.StartsWith(hash + ":", StringComparison.Ordinal))
+                return stored[(hash.Length + 1)..];
+
+            var body = new Dictionary<string, object>
+            {
+                ["name"] = $"LinguaBridge {source.Code}>{target.Code}",
+                ["source_lang"] = source.DeepLSource.ToLowerInvariant(),
+                ["target_lang"] = target.DeepLSource.ToLowerInvariant(),
+                ["entries"] = tsv,
+                ["entries_format"] = "tsv",
+            };
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{BaseUrl(key)}/v2/glossaries")
+            {
+                Content = JsonContent.Create(body),
+            };
+            request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
+            using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+                GlossaryStatus = $"upload failed for {source.Code}>{target.Code}: HTTP {(int)response.StatusCode} {detail}";
+                lock (glossaryFailedUntil)
+                    glossaryFailedUntil[slot] = DateTime.Now.AddMinutes(10);
+                return null;
+            }
+
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            var id = doc.RootElement.GetProperty("glossary_id").GetString()!;
+
+            if (stored != null && stored.IndexOf(':') is var colon and > 0)
+                _ = DeleteGlossaryAsync(key, stored[(colon + 1)..]); // replace the outdated one, best effort
+            ids[slot] = $"{hash}:{id}";
+            GlossaryStatus = $"{source.Code}>{target.Code} uploaded ({tsv.Split('\n').Length} terms)";
+            SaveRequested?.Invoke();
+            return id;
+        }
+        finally
+        {
+            glossaryLock.Release();
+        }
+    }
+
+    private async Task DeleteGlossaryAsync(string key, string id)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl(key)}/v2/glossaries/{id}");
+            request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
+            using var _ = await http.SendAsync(request).ConfigureAwait(false);
+        }
+        catch
+        {
+            // ignored: an orphaned glossary is harmless
+        }
     }
 
     /// <summary>Returns (used, limit) characters for the current billing period of one key.</summary>

@@ -12,7 +12,7 @@ public sealed record OutgoingCommand(string ChannelPrefix, Language? Target, str
     private static readonly HashSet<string> ChannelCommands = new(StringComparer.OrdinalIgnoreCase)
     {
         "/s", "/say", "/p", "/party", "/a", "/alliance", "/fc", "/freecompany", "/sh", "/shout", "/y", "/yell",
-        "/e", "/echo", "/n", "/novice", "/pvpteam",
+        "/e", "/echo", "/n", "/novice", "/pvpteam", "/em", "/emote",
         "/l1", "/l2", "/l3", "/l4", "/l5", "/l6", "/l7", "/l8",
         "/linkshell1", "/linkshell2", "/linkshell3", "/linkshell4", "/linkshell5", "/linkshell6", "/linkshell7", "/linkshell8",
         "/cwl1", "/cwl2", "/cwl3", "/cwl4", "/cwl5", "/cwl6", "/cwl7", "/cwl8",
@@ -107,7 +107,7 @@ public sealed record OutgoingCommand(string ChannelPrefix, Language? Target, str
             return false;
         }
 
-        error = $"Unsupported channel '{cmd}'. Use /s /p /a /fc /sh /y /l1-8 /cwl1-8 /t /r.";
+        error = $"Unsupported channel '{cmd}'. Use /s /p /a /fc /em /sh /y /l1-8 /cwl1-8 /t /r.";
         return false;
     }
 
