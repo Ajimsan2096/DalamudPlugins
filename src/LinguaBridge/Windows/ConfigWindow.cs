@@ -55,6 +55,7 @@ public sealed class ConfigWindow : Window
     private string newSource = string.Empty;
     private string newTarget = string.Empty;
     private string glossaryFilter = string.Empty;
+    private string importResult = string.Empty;
     private bool checkingUsage;
     private string whitelistText;
     private string protectedText;
@@ -831,6 +832,24 @@ public sealed class ConfigWindow : Window
                           "knows the source language. They are uploaded to your DeepL account as glossaries " +
                           "(one per direction and per key) automatically. DeepL only.");
         ImGui.TextDisabled($"Status: {plugin.Translator.DeepL.GlossaryStatus}");
+        if (ImGui.Button("Import recommended terms"))
+        {
+            var added = 0;
+            foreach (var (from, to, source, target) in PairStyle.RecommendedGlossary)
+            {
+                if (cfg.Glossary.Any(e => e.From == from && e.To == to && e.Source.Equals(source, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                cfg.Glossary.Add(new GlossaryEntry { From = from, To = to, Source = source, Target = target });
+                added++;
+            }
+            importResult = added == 0 ? "Already imported." : $"{added} terms added.";
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Endearments (amor > mon amour, babe > bébé, mon cœur > sweetheart...) and official " +
+                                   "FFXIV job/term names between English and French (Dark Knight <> Chevalier noir...). " +
+                                   "Remove any entry you don't like.");
+        ImGui.SameLine();
+        ImGui.TextDisabled(importResult);
         ImGui.Spacing();
 
         ImGui.SetNextItemWidth(60);

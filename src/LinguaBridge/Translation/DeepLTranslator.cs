@@ -32,6 +32,7 @@ public sealed class DeepLTranslator : ITranslator
     private readonly Func<Configuration> config;
     private readonly object stateLock = new();
     private readonly Dictionary<string, KeyState> states = new();
+    private bool qualityModelRejected;
     private int current; // index of the key that worked last; tried first
 
     /// <summary>Raised when a key stops working and the next one takes over (index, reason).</summary>
@@ -148,6 +149,9 @@ public sealed class DeepLTranslator : ITranslator
         if (!string.IsNullOrWhiteSpace(options.Context))
             context += "\nPrevious messages in this conversation:\n" + options.Context;
 
+        if (PairStyle.DeepLHint(target.Code) is { Length: > 0 } hint)
+            context += "\n" + hint;
+
         var body = new Dictionary<string, object>
         {
             ["text"] = new[] { xml ? RpMarkup.ToXml(text, options.Roleplay) : text },
@@ -166,6 +170,10 @@ public sealed class DeepLTranslator : ITranslator
             body["tag_handling"] = "xml";
             body["ignore_tags"] = new[] { "x" };
         }
+        // DeepL's newest (LLM-based) model gives the most natural output; falls back automatically when the
+        // language pair does not support it. Dropped for good if this account/endpoint rejects the parameter.
+        if (!qualityModelRejected)
+            body["model_type"] = "prefer_quality_optimized";
         var formality = options.Roleplay ? cfg.RpFormality : cfg.DeepLFormality;
         if (formality != "default")
             body["formality"] = formality;
@@ -178,6 +186,15 @@ public sealed class DeepLTranslator : ITranslator
 
         using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
         var status = (int)response.StatusCode;
+        if (status == 400 && body.ContainsKey("model_type"))
+        {
+            var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (detail.Contains("model_type", StringComparison.OrdinalIgnoreCase))
+            {
+                qualityModelRejected = true;
+                return await TryKeyAsync(key, text, source, target, options, ct).ConfigureAwait(false);
+            }
+        }
         if (!response.IsSuccessStatusCode)
         {
             var reason = status switch

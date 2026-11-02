@@ -107,7 +107,7 @@ public sealed partial class LlmTranslator : ITranslator
                 continue;
             try
             {
-                var raw = await CompleteAsync(p, system, user, text.Length, ct).ConfigureAwait(false);
+                var raw = await CompleteAsync(p, Messages(system, user, source, target), text.Length, ct).ConfigureAwait(false);
                 var result = Parse(raw, text);
                 SetState(p, "OK", TimeSpan.Zero);
                 LastProvider = p.Name;
@@ -142,7 +142,7 @@ public sealed partial class LlmTranslator : ITranslator
                                          new TranslateOptions(Roleplay: true));
         try
         {
-            var raw = await CompleteAsync(p, system, user, 60, ct).ConfigureAwait(false);
+            var raw = await CompleteAsync(p, Messages(system, user, Languages.Get("EN"), target), 60, ct).ConfigureAwait(false);
             var r = Parse(raw, "x");
             SetState(p, "OK", TimeSpan.Zero);
             return "OK: " + r.Text;
@@ -170,6 +170,10 @@ public sealed partial class LlmTranslator : ITranslator
 
         var template = string.IsNullOrWhiteSpace(cfg.LlmPrompt) ? DefaultPrompt : cfg.LlmPrompt;
         var sb = new StringBuilder(template.Replace("{target}", targetName));
+        if (PairStyle.RulesFor(target.Code) is { } rules)
+            sb.Append("\n\n").Append(rules);
+        sb.Append("\n\nSound natural: adapt idioms instead of translating word for word, silently fix obvious typos " +
+                  "of the original, and keep roughly the same length and punctuation style.");
         if (options.Roleplay)
             sb.Append("\n\n").Append(RoleplayExtra);
         if (options.Roleplay && !string.IsNullOrWhiteSpace(cfg.RpSceneNotes))
@@ -267,7 +271,20 @@ public sealed partial class LlmTranslator : ITranslator
         return new EngineResult(text, detected.Length > 2 ? detected[..2] : detected);
     }
 
-    private async Task<string> CompleteAsync(LlmProvider p, string system, string user, int inputChars, CancellationToken ct)
+    /// <summary>System prompt, then worked examples for this direction as previous turns, then the real message.</summary>
+    private static object[] Messages(string system, string user, Language? source, Language target)
+    {
+        var list = new List<object> { new { role = "system", content = system } };
+        foreach (var (src, input, output) in PairStyle.ExamplesFor(source?.Code, target.Code))
+        {
+            list.Add(new { role = "user", content = $"(original language: {LanguageEnglishName(src)})\n{input}" });
+            list.Add(new { role = "assistant", content = $"[[{src.ToLowerInvariant()}]] {output}" });
+        }
+        list.Add(new { role = "user", content = user });
+        return list.ToArray();
+    }
+
+    private async Task<string> CompleteAsync(LlmProvider p, object[] messages, int inputChars, CancellationToken ct)
     {
         var url = p.BaseUrl.Trim().TrimEnd('/') + "/chat/completions";
         var body = new Dictionary<string, object>
@@ -275,11 +292,7 @@ public sealed partial class LlmTranslator : ITranslator
             ["model"] = p.Model.Trim(),
             ["temperature"] = config().LlmTemperature,
             ["max_tokens"] = Math.Clamp(inputChars * 2 + 200, 256, 2048),
-            ["messages"] = new object[]
-            {
-                new { role = "system", content = system },
-                new { role = "user", content = user },
-            },
+            ["messages"] = messages,
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, url) { Content = JsonContent.Create(body) };

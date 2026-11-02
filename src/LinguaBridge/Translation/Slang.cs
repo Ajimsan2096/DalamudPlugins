@@ -30,6 +30,8 @@ public static partial class Slang
             ["oklm"] = "tranquille", ["askip"] = "à ce qu'il paraît", ["jdois"] = "je dois", ["jpeux"] = "je peux",
             ["ya"] = "il y a", ["yen"] = "il y en", ["ptet"] = "peut-être", ["p-e"] = "peut-être", ["mm"] = "même",
             ["kan"] = "quand", ["koi"] = "quoi", ["ki"] = "qui", ["bb"] = "bébé", ["bn"] = "bonne nuit",
+            ["cv"] = "ça va", ["stv"] = "si tu veux", ["jtd"] = "je t'adore", ["bsx"] = "bisous", ["biz"] = "bises",
+            ["pti"] = "petit", ["ptite"] = "petite", ["tjs"] = "toujours", ["fds"] = "fin de semaine", ["dmn"] = "demain",
         }),
         ["EN"] = Map(new()
         {
@@ -52,7 +54,19 @@ public static partial class Slang
         {
             ["q"] = "que", ["xq"] = "porque", ["pq"] = "porque", ["tb"] = "también", ["tmb"] = "también",
             ["nse"] = "no sé", ["ns"] = "no sé", ["porfa"] = "por favor", ["xfa"] = "por favor", ["dnd"] = "dónde",
-            ["bn"] = "bien", ["mñn"] = "mañana", ["salu2"] = "saludos", ["tqm"] = "te quiero mucho"
+            ["bn"] = "bien", ["mñn"] = "mañana", ["salu2"] = "saludos", ["tqm"] = "te quiero mucho",
+            ["k"] = "que", ["x"] = "por", ["xa"] = "para", ["pa"] = "para", ["toy"] = "estoy", ["tas"] = "estás",
+            ["tmbn"] = "también", ["msj"] = "mensaje", ["finde"] = "fin de semana", ["xd"] = "xD",
+            // common words typed without accents (unambiguous ones only)
+            ["muchisimo"] = "muchísimo", ["muchisima"] = "muchísima", ["tambien"] = "también", ["aqui"] = "aquí",
+            ["asi"] = "así", ["despues"] = "después", ["dia"] = "día", ["dias"] = "días", ["corazon"] = "corazón",
+            ["jamas"] = "jamás", ["ademas"] = "además", ["algun"] = "algún", ["ningun"] = "ningún", ["facil"] = "fácil",
+            ["dificil"] = "difícil", ["rapido"] = "rápido", ["musica"] = "música", ["razon"] = "razón",
+            ["gustaria"] = "gustaría", ["podria"] = "podría", ["deberia"] = "debería", ["querria"] = "querría",
+            ["tendria"] = "tendría", ["haria"] = "haría", ["diria"] = "diría", ["estaria"] = "estaría",
+            ["habia"] = "había", ["sabia"] = "sabía", ["queria"] = "quería", ["tenia"] = "tenía", ["podias"] = "podías",
+            ["carino"] = "cariño", ["anos"] = "años", ["manana"] = "mañana", ["pequeno"] = "pequeño", ["pequena"] = "pequeña",
+            ["perdon"] = "perdón", ["cancion"] = "canción"
         }),
     };
 
