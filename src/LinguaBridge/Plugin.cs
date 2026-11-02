@@ -73,6 +73,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Translator.FallbackUsed += OnFallbackUsed;
         Translator.DeepL.KeyUnavailable += OnDeepLKeyUnavailable;
         Translator.DeepL.SaveRequested += OnGlossarySaved;
+        Translator.Llm.ProviderUnavailable += OnLlmProviderUnavailable;
 
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
@@ -119,6 +120,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Translator.FallbackUsed -= OnFallbackUsed;
         Translator.DeepL.KeyUnavailable -= OnDeepLKeyUnavailable;
         Translator.DeepL.SaveRequested -= OnGlossarySaved;
+        Translator.Llm.ProviderUnavailable -= OnLlmProviderUnavailable;
         Translator.Dispose();
     }
 
@@ -526,7 +528,20 @@ public sealed partial class Plugin : IDalamudPlugin
             return;
         lastFallbackPrinted = DateTime.Now;
         _ = Framework.RunOnFrameworkThread(() =>
-            ChatGui.PrintError($"{reason}. Using Google until DeepL works again.", Tag));
+            ChatGui.PrintError($"{reason}. Using the backup engine for now.", Tag));
+    }
+
+    private readonly Dictionary<string, DateTime> llmNoticeTimes = new();
+
+    private void OnLlmProviderUnavailable(string provider, string reason)
+    {
+        lock (llmNoticeTimes)
+        {
+            if (llmNoticeTimes.TryGetValue(provider, out var t) && DateTime.Now - t < TimeSpan.FromMinutes(5))
+                return;
+            llmNoticeTimes[provider] = DateTime.Now;
+        }
+        _ = Framework.RunOnFrameworkThread(() => ChatGui.Print($"AI {provider}: {reason}, trying the next one.", Tag));
     }
 
     private void OnGlossarySaved() => _ = Framework.RunOnFrameworkThread(() => PluginInterface.SavePluginConfig(Configuration));

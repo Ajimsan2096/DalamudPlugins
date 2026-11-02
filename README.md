@@ -38,6 +38,7 @@ Repositorio personal de plugins de Dalamud para FFXIV.
 - **Glosario propio** (pestaña *Glossary*): tus traducciones de términos por dirección (EN>FR, FR>EN…), subidas automáticamente como glosarios de DeepL en cada clave.
 - **Perfiles de personaje** (pestaña *Roleplay*): género y notas de cada personaje; se mandan a DeepL solo cuando ese personaje está en la conversación → concordancia correcta (il/elle, sûr/sûre) y tono adecuado.
 - **Nombres protegidos automáticamente**: el remitente y tu personaje nunca se traducen.
+- **Motor de IA** (pestaña *AI*): cualquier API compatible con OpenAI (Mistral, Groq, Cerebras, OpenRouter, DeepSeek, Gemini, o un modelo local con Ollama / LM Studio), en cadena con respaldo automático: si uno llega al límite, falla o se niega, se usa el siguiente; si fallan todos, DeepL / Google. Por defecto solo en modo rol. Usa el contexto de la conversación, los perfiles de personaje y el glosario.
 - Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/lb rp` · `/tr`.
 
 ## Desarrollo

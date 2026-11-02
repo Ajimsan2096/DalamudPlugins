@@ -35,6 +35,7 @@ public sealed class TranslationService : IDisposable
 
     public DeepLTranslator DeepL { get; }
     public GoogleTranslator Google { get; }
+    public LlmTranslator Llm { get; }
 
     /// <summary>Raised (from a worker thread) when DeepL failed and Google was used instead.</summary>
     public event Action<string>? FallbackUsed;
@@ -50,9 +51,23 @@ public sealed class TranslationService : IDisposable
         http.DefaultRequestHeaders.UserAgent.ParseAdd("LinguaBridge-Dalamud/1.1");
         DeepL = new DeepLTranslator(http, config);
         Google = new GoogleTranslator(http);
+        Llm = new LlmTranslator(http, config);
     }
 
-    private ITranslator Engine => config().Engine == TranslationEngine.DeepL ? DeepL : Google;
+    private ITranslator BaseEngine => config().Engine == TranslationEngine.DeepL ? DeepL : Google;
+
+    /// <summary>True when the AI providers are used for the current mode.</summary>
+    public bool UsingLlm
+    {
+        get
+        {
+            var cfg = config();
+            var wanted = cfg.LlmUsage == LlmUsage.Always || (cfg.LlmUsage == LlmUsage.RoleplayOnly && cfg.RoleplayMode);
+            return wanted && Llm.ActiveProviders.Count > 0;
+        }
+    }
+
+    private ITranslator Engine => UsingLlm ? Llm : BaseEngine;
 
     /// <summary>
     /// Translates <paramref name="text"/> to the "other" language of the configured pair, or to
@@ -176,16 +191,34 @@ public sealed class TranslationService : IDisposable
         ITranslator engine, string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
         Interlocked.Add(ref charactersSent, text.Length);
-        try
+
+        // Chain: AI providers -> DeepL (if it is the main engine) -> Google (if fallback is on).
+        var chain = new List<ITranslator> { engine };
+        if (engine == Llm && BaseEngine == DeepL && DeepL.Keys.Count > 0)
+            chain.Add(DeepL);
+        if (engine != Google && (config().FallbackToGoogle || BaseEngine == Google))
+            chain.Add(Google);
+
+        Exception? last = null;
+        for (var i = 0; i < chain.Count; i++)
         {
-            return (await engine.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false), engine.Name);
+            var current = chain[i];
+            try
+            {
+                var r = await current.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false);
+                var name = current == Llm ? Llm.LastProvider : current.Name;
+                if (i > 0)
+                    name += " (fallback)";
+                return (r, name);
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested && i < chain.Count - 1 &&
+                                       ex is TranslationException or HttpRequestException or TaskCanceledException)
+            {
+                last = ex;
+                FallbackUsed?.Invoke(ex is TranslationException ? ex.Message : $"{current.Name} did not respond");
+            }
         }
-        catch (Exception ex) when (engine == DeepL && config().FallbackToGoogle && !ct.IsCancellationRequested &&
-                                   ex is TranslationException or HttpRequestException or TaskCanceledException)
-        {
-            FallbackUsed?.Invoke(ex is TranslationException ? ex.Message : "DeepL did not respond");
-            return (await Google.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false), "Google (fallback)");
-        }
+        throw last ?? new TranslationException("Translation failed");
     }
 
     /// <summary>

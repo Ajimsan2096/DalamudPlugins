@@ -106,6 +106,15 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Internal: DeepL glossary ids per key fingerprint and direction ("hash:id").</summary>
     public Dictionary<string, string> DeepLGlossaryIds { get; set; } = new();
 
+    // --- AI (OpenAI-compatible LLMs) ---
+    /// <summary>When to use the AI providers instead of DeepL/Google.</summary>
+    public LlmUsage LlmUsage { get; set; } = LlmUsage.RoleplayOnly;
+    /// <summary>Providers tried in order; DeepL/Google are used when all of them fail.</summary>
+    public List<LlmProvider> LlmProviders { get; set; } = new();
+    /// <summary>Custom system prompt ({target} = target language). Empty = built-in prompt.</summary>
+    public string LlmPrompt { get; set; } = string.Empty;
+    public float LlmTemperature { get; set; } = 0.3f;
+
     /// <summary>Moves settings from older versions into their current shape. Returns true if anything changed.</summary>
     public bool Migrate()
     {
@@ -124,6 +133,43 @@ public sealed class Configuration : IPluginConfiguration
         }
         return changed;
     }
+}
+
+public enum LlmUsage
+{
+    Off = 0,
+    RoleplayOnly = 1,
+    Always = 2,
+}
+
+[Serializable]
+public sealed class LlmProvider
+{
+    public string Id { get; set; } = Guid.NewGuid().ToString("N");
+    public string Name { get; set; } = "Custom";
+    public string BaseUrl { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+    public string Model { get; set; } = string.Empty;
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>Ready-made settings. Model names change often: use "List models" to pick a current one.</summary>
+    public static readonly (string Name, string Url, string Model, string KeyPage, string Note)[] Presets =
+    {
+        ("Mistral", "https://api.mistral.ai/v1", "mistral-small-latest", "https://console.mistral.ai/api-keys",
+            "Free plan (phone verification), ~1 request/s. Very good FR/ES, permissive."),
+        ("Groq", "https://api.groq.com/openai/v1", "llama-3.3-70b-versatile", "https://console.groq.com/keys",
+            "Free, very fast. Daily request/token caps per model."),
+        ("Cerebras", "https://api.cerebras.ai/v1", "llama-3.3-70b", "https://cloud.cerebras.ai",
+            "Free, large daily token quota. Good backup."),
+        ("OpenRouter", "https://openrouter.ai/api/v1", "meta-llama/llama-3.3-70b-instruct:free", "https://openrouter.ai/keys",
+            "Many models; ':free' ones limited to ~50 requests/day unless you bought credits once."),
+        ("DeepSeek", "https://api.deepseek.com/v1", "deepseek-chat", "https://platform.deepseek.com/api_keys",
+            "Paid but very cheap. Servers in China."),
+        ("Gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "gemini-2.5-flash", "https://aistudio.google.com/apikey",
+            "Excellent quality; may block explicit content."),
+        ("Local (Ollama / LM Studio)", "http://localhost:11434/v1", "", "https://ollama.com",
+            "Runs on your PC: free and fully private, needs a decent GPU."),
+    };
 }
 
 [Serializable]

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -41,6 +43,11 @@ public sealed class ConfigWindow : Window
     private readonly Plugin plugin;
     private bool showKey;
     private string newKey = string.Empty;
+    private int presetIndex;
+    private readonly ConcurrentDictionary<string, string> aiTestResults = new(); // written from background tasks
+    private readonly ConcurrentDictionary<string, List<string>> aiModels = new();
+    private string aiPrompt = string.Empty;
+    private bool aiPromptLoaded;
     private string sceneNotes = string.Empty;
     private bool sceneNotesLoaded;
     private int glossaryFrom;
@@ -74,6 +81,8 @@ public sealed class ConfigWindow : Window
             if (tab) DrawChat();
         using (var tab = ImRaii.TabItem("Roleplay"))
             if (tab) DrawRoleplay();
+        using (var tab = ImRaii.TabItem("AI"))
+            if (tab) DrawAi();
         using (var tab = ImRaii.TabItem("Glossary"))
             if (tab) DrawGlossary();
         using (var tab = ImRaii.TabItem("Help"))
@@ -617,6 +626,198 @@ public sealed class ConfigWindow : Window
         }
         if (changed)
             plugin.Translator.ClearCache();
+    }
+
+    private void DrawAi()
+    {
+        var cfg = plugin.Configuration;
+        var llm = plugin.Translator.Llm;
+        var changed = false;
+
+        ImGui.TextWrapped("Use AI models (any OpenAI-compatible API) as translator. They understand idioms, tone and " +
+                          "whole scenes much better than DeepL; best for roleplay. Providers are tried in order; " +
+                          "if all fail, DeepL / Google are used.");
+
+        string[] usages = { "Off", "Only in roleplay mode (recommended)", "Always" };
+        var usage = (int)cfg.LlmUsage;
+        ImGui.SetNextItemWidth(260);
+        if (ImGui.Combo("When to use AI", ref usage, usages, usages.Length))
+        {
+            cfg.LlmUsage = (LlmUsage)usage;
+            plugin.Translator.ClearCache();
+            changed = true;
+        }
+        ImGui.TextDisabled(plugin.Translator.UsingLlm ? "AI is active right now." :
+                           llm.ActiveProviders.Count == 0 ? "No provider configured yet." : "AI is not active in the current mode.");
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Providers (tried top to bottom)");
+
+        var remove = -1;
+        var moveUp = -1;
+        for (var i = 0; i < cfg.LlmProviders.Count; i++)
+        {
+            var p = cfg.LlmProviders[i];
+            using var id = ImRaii.PushId(p.Id);
+            var enabled = p.Enabled;
+            if (ImGui.Checkbox("##en", ref enabled))
+            {
+                p.Enabled = enabled;
+                changed = true;
+            }
+            ImGui.SameLine();
+            var open = ImGui.CollapsingHeader($"#{i + 1} {p.Name}  [{p.Model}]  - {llm.Describe(p)}###hdr");
+            if (!open)
+                continue;
+
+            using (ImRaii.PushIndent())
+            {
+                var name = p.Name;
+                ImGui.SetNextItemWidth(200);
+                if (ImGui.InputText("Name", ref name, 40)) { p.Name = name; changed = true; }
+                var url = p.BaseUrl;
+                ImGui.SetNextItemWidth(-90);
+                if (ImGui.InputText("Base URL", ref url, 200)) { p.BaseUrl = url.Trim(); changed = true; }
+                var key = p.ApiKey;
+                ImGui.SetNextItemWidth(-90);
+                if (ImGui.InputText("API key", ref key, 200, showKey ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.Password))
+                {
+                    p.ApiKey = key.Trim();
+                    changed = true;
+                }
+                var model = p.Model;
+                ImGui.SetNextItemWidth(-200);
+                if (ImGui.InputText("Model", ref model, 120)) { p.Model = model.Trim(); changed = true; }
+                ImGui.SameLine();
+                if (ImGui.SmallButton("List models"))
+                {
+                    aiTestResults[p.Id] = "Loading models...";
+                    _ = llm.ListModelsAsync(p, default).ContinueWith(t =>
+                    {
+                        if (t.IsCompletedSuccessfully)
+                        {
+                            aiModels[p.Id] = t.Result;
+                            aiTestResults[p.Id] = $"{t.Result.Count} models found";
+                        }
+                        else
+                        {
+                            aiTestResults[p.Id] = "Could not list models: " + t.Exception?.GetBaseException().Message;
+                        }
+                    });
+                }
+                if (aiModels.TryGetValue(p.Id, out var models) && models.Count > 0)
+                {
+                    var current = Math.Max(0, models.IndexOf(p.Model));
+                    ImGui.SetNextItemWidth(-200);
+                    if (ImGui.Combo("Pick model", ref current, models.ToArray(), models.Count))
+                    {
+                        p.Model = models[current];
+                        changed = true;
+                    }
+                }
+
+                if (ImGui.Button("Test"))
+                {
+                    aiTestResults[p.Id] = "Testing...";
+                    _ = llm.TestAsync(p, default).ContinueWith(t => aiTestResults[p.Id] = t.IsCompletedSuccessfully
+                        ? t.Result : "Failed: " + t.Exception?.GetBaseException().Message);
+                }
+                ImGui.SameLine();
+                using (ImRaii.Disabled(i == 0))
+                    if (ImGui.Button("Move up"))
+                        moveUp = i;
+                ImGui.SameLine();
+                if (ImGui.Button("Remove"))
+                    remove = i;
+                if (aiTestResults.TryGetValue(p.Id, out var res))
+                    ImGui.TextWrapped(res);
+                var preset = LlmProvider.Presets.FirstOrDefault(x => x.Url == p.BaseUrl);
+                if (preset.Name != null)
+                {
+                    ImGui.TextDisabled(preset.Note);
+                    if (ImGui.SmallButton("Copy key page link"))
+                        ImGui.SetClipboardText(preset.KeyPage);
+                }
+            }
+            ImGui.Spacing();
+        }
+        if (remove >= 0)
+        {
+            cfg.LlmProviders.RemoveAt(remove);
+            changed = true;
+        }
+        if (moveUp > 0)
+        {
+            (cfg.LlmProviders[moveUp - 1], cfg.LlmProviders[moveUp]) = (cfg.LlmProviders[moveUp], cfg.LlmProviders[moveUp - 1]);
+            changed = true;
+        }
+
+        var presetNames = LlmProvider.Presets.Select(x => x.Name).Append("Custom (any OpenAI-compatible URL)").ToArray();
+        ImGui.SetNextItemWidth(260);
+        ImGui.Combo("##preset", ref presetIndex, presetNames, presetNames.Length);
+        ImGui.SameLine();
+        if (ImGui.Button("Add provider"))
+        {
+            var p = new LlmProvider();
+            if (presetIndex < LlmProvider.Presets.Length)
+            {
+                var x = LlmProvider.Presets[presetIndex];
+                p.Name = x.Name;
+                p.BaseUrl = x.Url;
+                p.Model = x.Model;
+                ImGui.SetClipboardText(x.KeyPage);
+                aiTestResults[p.Id] = $"Key page copied to clipboard: {x.KeyPage}  - paste your key above, then Test.";
+            }
+            cfg.LlmProviders.Add(p);
+            changed = true;
+        }
+        ImGui.SameLine();
+        ImGui.Checkbox("Show keys", ref showKey);
+        if (ImGui.SmallButton("Retry paused providers"))
+            llm.ResetStates();
+
+        ImGui.Separator();
+        if (ImGui.CollapsingHeader("Advanced: prompt and temperature"))
+        {
+            var temp = cfg.LlmTemperature;
+            ImGui.SetNextItemWidth(150);
+            if (ImGui.SliderFloat("Temperature", ref temp, 0f, 1f, "%.2f"))
+            {
+                cfg.LlmTemperature = temp;
+                changed = true;
+            }
+            ImGuiComponents.HelpMarker("0.2-0.4 keeps translations faithful. Higher = freer, more creative wording.");
+            if (!aiPromptLoaded)
+            {
+                aiPrompt = string.IsNullOrWhiteSpace(cfg.LlmPrompt) ? LlmTranslator.DefaultPrompt : cfg.LlmPrompt;
+                aiPromptLoaded = true;
+            }
+            ImGui.TextDisabled("{target} is replaced by the target language. Keep the [[xx]] output rule.");
+            if (ImGui.InputTextMultiline("##prompt", ref aiPrompt, 4000, new Vector2(-1, ImGui.GetTextLineHeight() * 10)))
+            {
+                cfg.LlmPrompt = aiPrompt.Trim() == LlmTranslator.DefaultPrompt.Trim() ? string.Empty : aiPrompt;
+                plugin.Translator.ClearCache();
+                changed = true;
+            }
+            if (ImGui.SmallButton("Reset prompt"))
+            {
+                cfg.LlmPrompt = string.Empty;
+                aiPrompt = LlmTranslator.DefaultPrompt;
+                changed = true;
+            }
+        }
+
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1f, 0.75f, 0.35f, 1f), "Privacy");
+        ImGui.TextWrapped("Messages (yours and your partners') are sent to the provider you pick. Free plans may store " +
+                          "them or use them for training; check each provider's terms. A local model (Ollama / " +
+                          "LM Studio) keeps everything on your PC. Keys are stored in plain text in your plugin config.");
+
+        if (changed)
+        {
+            plugin.Translator.ClearCache();
+            plugin.SaveConfig();
+        }
     }
 
     private void DrawGlossary()
