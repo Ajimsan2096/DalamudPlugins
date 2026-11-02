@@ -489,15 +489,18 @@ public sealed class ConfigWindow : Window
             sceneNotesLoaded = true;
         }
         ImGui.Spacing();
-        ImGui.TextUnformatted("Scene / character notes for DeepL (optional, not billed):");
+        ImGui.TextUnformatted("Scene notes for DeepL (optional, not billed):");
         ImGuiComponents.HelpMarker("Short facts that help the translation, in any language. Examples:\n" +
-                                   "\"Rukenu is a male Miqo'te knight; Eliza is a female Au Ra mage. They speak " +
-                                   "formally to each other. Setting: Ishgard, winter.\"");
+                                   "\"Setting: a quiet inn in Ul'dah at night. The characters are a couple, intimate and teasing. " +
+                                   "Keep pet names (bebé, mon chéri, princess) as written.\"");
         if (ImGui.InputTextMultiline("##scene", ref sceneNotes, 600, new Vector2(-1, ImGui.GetTextLineHeight() * 4)))
         {
             cfg.RpSceneNotes = sceneNotes;
             changed = true;
         }
+
+        ImGui.Separator();
+        DrawCharacters(ref changed);
 
         ImGui.Separator();
         ImGui.TextUnformatted("Sending long posts");
@@ -526,6 +529,94 @@ public sealed class ConfigWindow : Window
 
         if (changed)
             plugin.SaveConfig();
+    }
+
+    private void DrawCharacters(ref bool changed)
+    {
+        var cfg = plugin.Configuration;
+        ImGui.TextUnformatted("Characters");
+        ImGuiComponents.HelpMarker("Gender and short notes per character. Sent to DeepL (not billed) only when that " +
+                                   "character is in the conversation. Fixes il/elle, sur/sure, beau/belle, he/she, " +
+                                   "and helps with tone (\"they are a couple, very affectionate\"). Works outside RP too.");
+
+        var me = Plugin.PlayerState.CharacterName;
+        if (!string.IsNullOrEmpty(me) && !cfg.Characters.Any(c => c.Name.Equals(me, StringComparison.OrdinalIgnoreCase)))
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Add me ({me})"))
+            {
+                cfg.Characters.Add(new CharacterProfile { Name = me });
+                changed = true;
+            }
+        }
+        var last = plugin.History.FirstOrDefault(h => !h.Outgoing && h.Sender is not ("Listing" or "You"))?.Sender;
+        if (last != null && !cfg.Characters.Any(c => c.Name.Equals(last, StringComparison.OrdinalIgnoreCase)))
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"Add {last}"))
+            {
+                cfg.Characters.Add(new CharacterProfile { Name = last });
+                changed = true;
+            }
+        }
+
+        var remove = -1;
+        using (var table = ImRaii.Table("chars", 4, ImGuiTableFlags.BordersInnerH | ImGuiTableFlags.SizingStretchProp))
+        {
+            if (table)
+            {
+                ImGui.TableSetupColumn("Name", ImGuiTableColumnFlags.WidthFixed, 140);
+                ImGui.TableSetupColumn("Gender", ImGuiTableColumnFlags.WidthFixed, 105);
+                ImGui.TableSetupColumn("Notes", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("", ImGuiTableColumnFlags.WidthFixed, 22);
+                ImGui.TableHeadersRow();
+                for (var i = 0; i < cfg.Characters.Count; i++)
+                {
+                    var c = cfg.Characters[i];
+                    using var id = ImRaii.PushId(i);
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    var name = c.Name;
+                    ImGui.SetNextItemWidth(-1);
+                    if (ImGui.InputText("##n", ref name, 64))
+                    {
+                        c.Name = name;
+                        changed = true;
+                    }
+                    ImGui.TableNextColumn();
+                    var g = Math.Max(0, Array.IndexOf(CharacterProfile.Genders, c.Gender));
+                    ImGui.SetNextItemWidth(-1);
+                    if (ImGui.Combo("##g", ref g, CharacterProfile.Genders, CharacterProfile.Genders.Length))
+                    {
+                        c.Gender = CharacterProfile.Genders[g];
+                        changed = true;
+                    }
+                    ImGui.TableNextColumn();
+                    var notes = c.Notes;
+                    ImGui.SetNextItemWidth(-1);
+                    if (ImGui.InputTextWithHint("##o", "e.g. her boyfriend, affectionate, calls her 'princess'", ref notes, 200))
+                    {
+                        c.Notes = notes;
+                        changed = true;
+                    }
+                    ImGui.TableNextColumn();
+                    if (ImGui.SmallButton("X"))
+                        remove = i;
+                }
+            }
+        }
+        if (ImGui.SmallButton("+ Add character"))
+        {
+            cfg.Characters.Add(new CharacterProfile());
+            changed = true;
+        }
+        if (remove >= 0)
+        {
+            cfg.Characters.RemoveAt(remove);
+            changed = true;
+        }
+        if (changed)
+            plugin.Translator.ClearCache();
     }
 
     private void DrawGlossary()

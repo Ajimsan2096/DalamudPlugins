@@ -7,7 +7,8 @@ public sealed record EngineResult(string Text, string DetectedSource);
 
 /// <param name="Context">Recent conversation lines, sent to DeepL as (unbilled) context. Null = none.</param>
 /// <param name="Roleplay">Roleplay mode: RP-aware context, markup preservation, RP formality.</param>
-public sealed record TranslateOptions(string? Context = null, bool Roleplay = false)
+/// <param name="Characters">Who is who (gender, how they address each other), for agreement and tone.</param>
+public sealed record TranslateOptions(string? Context = null, bool Roleplay = false, string? Characters = null)
 {
     public static readonly TranslateOptions None = new();
 }

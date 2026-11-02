@@ -84,7 +84,8 @@ public sealed class TranslationService : IDisposable
                 protectedTerms.AddRange(RoleplayShorthand);
         }
         text = ProtectedText.ProtectTerms(text, protectedTerms);
-        var options = new TranslateOptions(cfg.ContextLines > 0 ? context?.History : null, cfg.RoleplayMode);
+        var options = new TranslateOptions(cfg.ContextLines > 0 ? context?.History : null, cfg.RoleplayMode,
+                                           DescribeCharacters(cfg, context));
 
         // Context is deliberately not part of the key: same line, same translation (and fewer billed characters).
         var key = $"{engine.Name}|{cfg.RoleplayMode}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{preferred.Code}|{translateOthers}|{text}";
@@ -185,6 +186,26 @@ public sealed class TranslationService : IDisposable
             FallbackUsed?.Invoke(ex is TranslationException ? ex.Message : "DeepL did not respond");
             return (await Google.TranslateAsync(text, source, target, options, ct).ConfigureAwait(false), "Google (fallback)");
         }
+    }
+
+    /// <summary>
+    /// Profiles of the characters involved: the names passed in (sender, you, tell partner) plus anyone
+    /// whose first name appears in the recent conversation (e.g. the rest of a party scene).
+    /// </summary>
+    private static string? DescribeCharacters(Configuration cfg, TranslateRequestContext? context)
+    {
+        if (cfg.Characters.Count == 0)
+            return null;
+        var names = context?.Names ?? Array.Empty<string>();
+        var history = context?.History ?? string.Empty;
+        var lines = cfg.Characters
+            .Where(c => !string.IsNullOrWhiteSpace(c.Name))
+            .Where(c => names.Any(n => n.Equals(c.Name.Trim(), StringComparison.OrdinalIgnoreCase) ||
+                                       n.StartsWith(c.Name.Trim() + " ", StringComparison.OrdinalIgnoreCase)) ||
+                        history.Contains(c.Name.Trim().Split(' ')[0], StringComparison.OrdinalIgnoreCase))
+            .Select(c => c.Describe())
+            .ToList();
+        return lines.Count == 0 ? null : string.Join("\n", lines);
     }
 
     private static Language Unknown(string code) =>

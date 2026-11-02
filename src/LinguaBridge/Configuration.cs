@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Dalamud.Configuration;
 using Dalamud.Game.Text;
 using LinguaBridge.Translation;
@@ -40,7 +41,7 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Words never translated (character names, FC name, nicknames...).</summary>
     public List<string> ProtectedTerms { get; set; } = new();
     /// <summary>Also translate messages in languages outside the pair (into the preferred language).</summary>
-    public bool TranslateOtherLanguages { get; set; } = false;
+    public bool TranslateOtherLanguages { get; set; } = true;
 
     // --- Incoming chat ---
     public bool IncomingEnabled { get; set; } = true;
@@ -98,6 +99,8 @@ public sealed class Configuration : IPluginConfiguration
     public bool SplitLongMessages { get; set; } = true;
     /// <summary>Add (1/2), (2/2) markers when splitting.</summary>
     public bool SplitMarkers { get; set; } = true;
+    /// <summary>Who is who: gender and notes per character, sent to DeepL when that character is in the conversation.</summary>
+    public List<CharacterProfile> Characters { get; set; } = new();
     /// <summary>Your own term translations, uploaded to DeepL as glossaries (one per language direction).</summary>
     public List<GlossaryEntry> Glossary { get; set; } = new();
     /// <summary>Internal: DeepL glossary ids per key fingerprint and direction ("hash:id").</summary>
@@ -120,6 +123,30 @@ public sealed class Configuration : IPluginConfiguration
             changed = true;
         }
         return changed;
+    }
+}
+
+[Serializable]
+public sealed class CharacterProfile
+{
+    public static readonly string[] Genders = { "unspecified", "male", "female", "non-binary" };
+
+    public string Name { get; set; } = string.Empty;
+    public string Gender { get; set; } = "unspecified";
+    /// <summary>Free text: relationship, how they speak, nicknames ("calls Ysilia 'princess', speaks casually").</summary>
+    public string Notes { get; set; } = string.Empty;
+
+    public string Describe()
+    {
+        var gender = Gender switch
+        {
+            "male" => "male (he/him; French: il, masculine agreement)",
+            "female" => "female (she/her; French: elle, feminine agreement)",
+            "non-binary" => "non-binary (they/them)",
+            _ => null,
+        };
+        var parts = new[] { gender, string.IsNullOrWhiteSpace(Notes) ? null : Notes.Trim() }.Where(p => p != null);
+        return $"- {Name.Trim()}: {string.Join("; ", parts)}";
     }
 }
 

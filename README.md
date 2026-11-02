@@ -36,6 +36,7 @@ Repositorio personal de plugins de Dalamud para FFXIV.
   - Notas de escena/personajes para DeepL y formalidad propia para RP.
 - **Contexto de conversación**: las últimas líneas del mismo chat se mandan a DeepL como contexto (no se factura) → mejores pronombres, género, tu/vous.
 - **Glosario propio** (pestaña *Glossary*): tus traducciones de términos por dirección (EN>FR, FR>EN…), subidas automáticamente como glosarios de DeepL en cada clave.
+- **Perfiles de personaje** (pestaña *Roleplay*): género y notas de cada personaje; se mandan a DeepL solo cuando ese personaje está en la conversación → concordancia correcta (il/elle, sûr/sûre) y tono adecuado.
 - **Nombres protegidos automáticamente**: el remitente y tu personaje nunca se traducen.
 - Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/lb rp` · `/tr`.
 

@@ -143,6 +143,8 @@ public sealed class DeepLTranslator : ITranslator
         var context = options.Roleplay ? RoleplayContext : GameContext;
         if (options.Roleplay && !string.IsNullOrWhiteSpace(cfg.RpSceneNotes))
             context += "\nScene notes: " + cfg.RpSceneNotes.Trim();
+        if (!string.IsNullOrWhiteSpace(options.Characters))
+            context += "\nCharacters (use for gender agreement, pronouns and how they address each other):\n" + options.Characters;
         if (!string.IsNullOrWhiteSpace(options.Context))
             context += "\nPrevious messages in this conversation:\n" + options.Context;
 
