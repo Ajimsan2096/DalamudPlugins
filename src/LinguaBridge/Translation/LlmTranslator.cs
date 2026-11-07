@@ -25,7 +25,7 @@ public sealed partial class LlmTranslator : ITranslator
         "- Keep tone, slang, register, humour and emotional intensity. Do not censor, soften, summarise or add anything.\n" +
         "- Keep *actions between asterisks*, quotes, ((OOC)) markers, emoticons (^^, o:, <3) and line structure.\n" +
         "- Never translate names, FFXIV terms or anything listed under 'Keep unchanged'.\n" +
-        "- Chat abbreviations (jsp, tkt, idk, tbh...) must be understood and translated naturally.\n" +
+        "- Chat abbreviations (jsp, tkt, idk, tbh, hdl, ka, vllt, tqm, ntp...) must be understood and translated naturally.\n" +
         "- The message may mix several languages (e.g. Spanish dialogue with an English *action*): translate EVERY part into {target}.\n" +
         "- If the message is already entirely in {target}, return it unchanged.\n" +
         "- Output format: first the ISO 639-1 code of the ORIGINAL language in double brackets, then the translation. " +
@@ -61,7 +61,8 @@ public sealed partial class LlmTranslator : ITranslator
     private static partial Regex ThinkRegex();
 
     [GeneratedRegex(@"^(i'?m sorry|i am sorry|sorry,? (but )?i|i can'?t|i cannot|i won'?t|i'?m not able|i am not able|as an ai|" +
-                    @"je ne peux pas|désolé,? (mais )?je ne|lo siento|no puedo)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+                    @"je ne peux pas|désolé,? (mais )?je ne|lo siento|no puedo|als (eine )?ki|ich kann (diese|deine) (anfrage|nachricht)|" +
+                    @"ich kann (dir )?(dabei|bei dieser anfrage) nicht helfen)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex RefusalRegex();
 
     public IReadOnlyList<LlmProvider> ActiveProviders =>
@@ -170,6 +171,8 @@ public sealed partial class LlmTranslator : ITranslator
 
         var template = string.IsNullOrWhiteSpace(cfg.LlmPrompt) ? DefaultPrompt : cfg.LlmPrompt;
         var sb = new StringBuilder(template.Replace("{target}", targetName));
+        if (PairStyle.SourceNotesFor(source?.Code) is { } notes && source!.Code != target.Code)
+            sb.Append("\n\n").Append(notes);
         if (PairStyle.RulesFor(target.Code) is { } rules)
             sb.Append("\n\n").Append(rules);
         sb.Append("\n\nSound natural: adapt idioms instead of translating word for word, silently fix obvious typos " +

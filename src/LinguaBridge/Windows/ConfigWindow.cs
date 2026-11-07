@@ -858,8 +858,10 @@ public sealed class ConfigWindow : Window
             importResult = added == 0 ? "Already imported." : $"{added} terms added.";
             changed = true;
         }
-        ImGuiComponents.HelpMarker("Endearments (amor > mon amour, babe > bébé, mon cœur > sweetheart...) and official " +
-                                   "FFXIV job/term names between English and French (Dark Knight <> Chevalier noir...). " +
+        ImGuiComponents.HelpMarker("Endearments (amor > mon amour, mi amor > mein Schatz, babe > bébé / Schatz, " +
+                                   "mon cœur > sweetheart...) and official FFXIV job/term names between English and French " +
+                                   "(Dark Knight <> Chevalier noir) and English and German (Dark Knight <> Dunkelritter, " +
+                                   "Free Company <> Freie Gesellschaft...). " +
                                    "Remove any entry you don't like.");
         ImGui.SameLine();
         ImGui.TextDisabled(importResult);

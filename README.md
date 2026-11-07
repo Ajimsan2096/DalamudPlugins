@@ -40,6 +40,7 @@ Repositorio personal de plugins de Dalamud para FFXIV.
 - **Nombres protegidos automáticamente**: el remitente y tu personaje nunca se traducen.
 - **Motor de IA** (pestaña *AI*): cualquier API compatible con OpenAI (Mistral, Groq, Cerebras, OpenRouter, DeepSeek, Gemini, o un modelo local con Ollama / LM Studio), en cadena con respaldo automático: si uno llega al límite, falla o se niega, se usa el siguiente; si fallan todos, DeepL / Google. Por defecto solo en modo rol. Usa el contexto de la conversación, los perfiles de personaje y el glosario.
 - **Reemplazar el original** (pestaña *Chat* → *How to show translations*): muestra solo la traducción, en el mismo orden, para que los posts largos de rol no salgan duplicados (siempre, o solo en modo rol).
+- **Español ↔ alemán ↔ inglés afinado**: abreviaturas alemanas (hdl, ka, vllt, iwie, haste, biste…) y palabras sin diéresis (fuer, schoen, moechte…), más abreviaturas españolas (ntp, tkm, bss, grax, xo, weno…) y palabras sin tilde; reglas de estilo para alemán (du, casos y género correctos, partículas modales), notas de lectura del alemán (doch/halt/mal, «Na?», «oder?») y del español de España (tío/tía, vale, venga, qué fuerte); ejemplos ES>DE, DE>EN, EN>DE y DE>ES para la IA; nombres oficiales de oficios FFXIV EN↔DE en el glosario recomendado.
 - Comandos: `/lb` · `/lb config` · `/lb wizard` · `/lb on|off|toggle` · `/lb rp` · `/tr`.
 
 ## Desarrollo

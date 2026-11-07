@@ -30,7 +30,11 @@ public static partial class LanguageDetector
                      "pues bueno claro oye mira vale guapa guapo cariño amor también tú"),
         ["DE"] = Set("der die das ein eine und oder aber ist sind war sein bin bist ich du er sie es wir ihr mich mein dein " +
                      "nicht kein ja nein mit von zu im am für auf aus wie was wer wo wann warum sehr alles gut danke hallo bitte " +
-                     "auch noch schon mal kann will muss gibt"),
+                     "auch noch schon mal kann will muss gibt den dem einen einem einer nichts habe hab hast haben " +
+                     "dich dir mir uns euch sich doch nur jetzt heute hier dann wenn weil dass ob gerne gern lieb schatz süß " +
+                     "ganz viel mehr bisschen echt wirklich halt eben denn wieder immer nie geht komm kommst kommt mach macht " +
+                     "weiß weiss bis nach über ohne ihm ihn ihnen nee jo genau stimmt klar vielleicht morgen gleich " +
+                     "möchte würde wäre hätte bitte tschüss liebe grüße boah krass geil mädel"),
         ["IT"] = Set("il lo la i gli le un uno una e o ma è sono era essere io tu lui lei noi voi loro mio mia tuo tua suo sua " +
                      "di del della in con per su non sì che chi dove quando perché come molto tutto bene grazie ciao anche più"),
         ["PT"] = Set("o a os as um uma e ou mas é são era ser estou está eu você ele ela nós eles meu minha seu sua de do da " +
