@@ -43,6 +43,19 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>Also translate messages in languages outside the pair (into the preferred language).</summary>
     public bool TranslateOtherLanguages { get; set; } = true;
 
+    // --- Learning ---
+    /// <summary>
+    /// Extra language every translated incoming message is also shown in (e.g. read German in Spanish and
+    /// also see it in English, to pick up the language little by little). Empty = off.
+    /// </summary>
+    public string LearningLanguage { get; set; } = string.Empty;
+    /// <summary>When not empty, the learning line is only added for these players (names, case-insensitive).</summary>
+    public List<string> LearningPlayers { get; set; } = new();
+    /// <summary>Also add the learning line to messages already in the language you read best (not translated).</summary>
+    public bool LearningForUntranslated { get; set; } = false;
+    /// <summary>UIColor row used for the learning line's tag.</summary>
+    public ushort LearningTagColor { get; set; } = 37;
+
     // --- Incoming chat ---
     public bool IncomingEnabled { get; set; } = true;
     public HashSet<XivChatType> Channels { get; set; } = new()

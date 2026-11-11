@@ -115,6 +115,15 @@ public sealed class MainWindow : Window
                 }
             }
             ImGui.TextWrapped(e.Translation.Text);
+            if (e.Learning is { } learning)
+            {
+                using (ImRaii.PushColor(ImGuiCol.Text, new Vector4(0.6f, 0.95f, 0.6f, 1f)))
+                    ImGui.TextWrapped($"[{learning.Target.Code}] {learning.Text}");
+                if (ImGui.IsItemClicked())
+                    ImGui.SetClipboardText(learning.Text);
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip($"Learning language ({learning.Target.Name}). Click to copy.");
+            }
             using (ImRaii.PushColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]))
                 ImGui.TextWrapped(e.Translation.Original);
             ImGui.Spacing();

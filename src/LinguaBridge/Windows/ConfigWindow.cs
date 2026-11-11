@@ -59,6 +59,7 @@ public sealed class ConfigWindow : Window
     private bool checkingUsage;
     private string whitelistText;
     private string protectedText;
+    private string learningPlayersText;
 
     public ConfigWindow(Plugin plugin) : base("LinguaBridge Settings###LinguaBridgeConfig")
     {
@@ -67,6 +68,7 @@ public sealed class ConfigWindow : Window
         SizeCondition = ImGuiCond.FirstUseEver;
         whitelistText = string.Join(", ", plugin.Configuration.PlayerWhitelist);
         protectedText = string.Join(", ", plugin.Configuration.ProtectedTerms);
+        learningPlayersText = string.Join(", ", plugin.Configuration.LearningPlayers);
     }
 
     public override void Draw()
@@ -310,6 +312,60 @@ public sealed class ConfigWindow : Window
         {
             cfg.ProtectedTerms = protectedText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
             changed = true;
+        }
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextUnformatted("Learning a language");
+        ImGuiComponents.HelpMarker("Adds a second line under each translated message, in the language you are learning.\n" +
+                                   "Example: you read Spanish, a German friend writes in German. You get the Spanish " +
+                                   "translation as usual, plus the same message in English, to pick it up little by little.\n" +
+                                   "Each learning line is one more request to the engine (DeepL characters).");
+        var learningNames = new[] { "Off" }.Concat(names).ToArray();
+        var l = string.IsNullOrWhiteSpace(cfg.LearningLanguage) || Languages.TryGet(cfg.LearningLanguage) == null
+            ? 0
+            : IndexOf(cfg.LearningLanguage) + 1;
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("Also show messages in", ref l, learningNames, learningNames.Length))
+        {
+            cfg.LearningLanguage = l == 0 ? string.Empty : Languages.All[l - 1].Code;
+            changed = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(cfg.LearningLanguage))
+        {
+            using (ImRaii.PushIndent())
+            {
+                if (cfg.LearningLanguage == cfg.PreferredLanguage)
+                    ImGui.TextColored(new Vector4(1, 0.7f, 0.3f, 1),
+                                      "This is the language you read best: messages are already translated into it.");
+
+                ImGui.TextUnformatted("Only for these players (comma separated, empty = everyone):");
+                ImGui.SetNextItemWidth(-1);
+                if (ImGui.InputTextWithHint("##learningplayers", "e.g. Hanna Weber", ref learningPlayersText, 1000))
+                {
+                    cfg.LearningPlayers = learningPlayersText
+                                          .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+                    changed = true;
+                }
+
+                var untranslated = cfg.LearningForUntranslated;
+                if (ImGui.Checkbox("Also for messages already in the language I read best", ref untranslated))
+                {
+                    cfg.LearningForUntranslated = untranslated;
+                    changed = true;
+                }
+                ImGuiComponents.HelpMarker("Off: only messages that get translated also get the learning line.\n" +
+                                           "On: messages written in your own language get it too (more engine requests).");
+
+                int lcolor = cfg.LearningTagColor;
+                ImGui.SetNextItemWidth(150);
+                if (ImGui.InputInt("Learning tag colour (UIColor id)", ref lcolor))
+                {
+                    cfg.LearningTagColor = (ushort)Math.Clamp(lcolor, 0, 1000);
+                    changed = true;
+                }
+            }
         }
 
         if (changed)

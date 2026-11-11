@@ -25,7 +25,11 @@ namespace LinguaBridge;
 
 /// <param name="ReplyPrefix">Chat command to answer this message in the same place ("/p ", "/t Name@World "...), or null.</param>
 public sealed record HistoryEntry(
-    DateTime Time, string Channel, string Sender, TranslationResult Translation, bool Outgoing, string? ReplyPrefix);
+    DateTime Time, string Channel, string Sender, TranslationResult Translation, bool Outgoing, string? ReplyPrefix)
+{
+    /// <summary>The same message in the learning language, when that option is on (filled in a moment later).</summary>
+    public TranslationResult? Learning { get; set; }
+}
 
 public sealed partial class Plugin : IDalamudPlugin
 {
@@ -405,6 +409,9 @@ public sealed partial class Plugin : IDalamudPlugin
                 names.Add(me);
             var ctx = new TranslateRequestContext(history, names);
             var translation = TranslateIncomingAsync(type, senderName, text, reply, ctx);
+            var learning = LearningApplies(senderName)
+                ? TranslateLearningAsync(translation, type, senderName, text, reply, ctx)
+                : null;
 
             if (ReplaceMode)
             {
@@ -413,12 +420,12 @@ public sealed partial class Plugin : IDalamudPlugin
                 var originalBytes = message.Message.Encode();
                 lock (outputLock)
                     outputChain = outputChain.ContinueWith(
-                        _ => PrintReplacementAsync(translation, type, senderBytes, originalBytes, plainText),
+                        _ => PrintReplacementAsync(translation, learning, type, senderBytes, originalBytes, plainText),
                         TaskScheduler.Default).Unwrap();
             }
             else
             {
-                _ = PrintBelowAsync(translation, type, senderBytes);
+                _ = PrintBelowAsync(translation, learning, type, senderBytes);
             }
         }
         catch (Exception ex)
@@ -438,8 +445,8 @@ public sealed partial class Plugin : IDalamudPlugin
         return spam;
     }
 
-    /// <summary>Translation of an incoming message, or null (already in your language, filtered, or failed).</summary>
-    private async Task<TranslationResult?> TranslateIncomingAsync(
+    /// <summary>History entry with the translation of an incoming message, or null (already in your language, filtered, or failed).</summary>
+    private async Task<HistoryEntry?> TranslateIncomingAsync(
         XivChatType type, string senderName, string text, string? reply, TranslateRequestContext ctx)
     {
         try
@@ -456,7 +463,58 @@ public sealed partial class Plugin : IDalamudPlugin
                 return null;
             if (isEmote)
                 result = result with { Text = StripLeadingName(result.Text, senderName) };
-            AddHistory(new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply));
+            var entry = new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply);
+            AddHistory(entry);
+            return entry;
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, force: false);
+            return null;
+        }
+    }
+
+    /// <summary>True when the learning line is on and applies to this sender.</summary>
+    private bool LearningApplies(string senderName)
+    {
+        var cfg = Configuration;
+        if (string.IsNullOrWhiteSpace(cfg.LearningLanguage) || Languages.TryGet(cfg.LearningLanguage) == null)
+            return false;
+        return cfg.LearningPlayers.Count == 0 ||
+               cfg.LearningPlayers.Any(p => p.Trim().Length > 0 && senderName.Contains(p.Trim(), StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// The same incoming message translated into the learning language (e.g. German shown in Spanish and also
+    /// in English), or null when it is not needed: already in that language, or identical to the main translation.
+    /// </summary>
+    private async Task<TranslationResult?> TranslateLearningAsync(
+        Task<HistoryEntry?> main, XivChatType type, string senderName, string text, string? reply, TranslateRequestContext ctx)
+    {
+        try
+        {
+            var entry = await main.ConfigureAwait(false);
+            var mainResult = entry?.Translation;
+            if (mainResult == null && !Configuration.LearningForUntranslated)
+                return null;
+            var learning = Languages.Get(Configuration.LearningLanguage);
+            if (mainResult != null && (mainResult.Source.Code == learning.Code || mainResult.Target.Code == learning.Code))
+                return null; // the message is already in that language, or the main line already shows it
+
+            var isEmote = type == XivChatType.CustomEmote;
+            var input = isEmote ? ProtectedText.Wrap(senderName) + " " + text : text;
+            var result = await Translator.TranslateAsync(input, learning, translateOthers: true, ctx).ConfigureAwait(false);
+            if (result == null)
+                return null;
+            if (isEmote)
+                result = result with { Text = StripLeadingName(result.Text, senderName) };
+            if (mainResult != null && string.Equals(result.Text.Trim(), mainResult.Text.Trim(), StringComparison.OrdinalIgnoreCase))
+                return null;
+
+            if (entry != null)
+                entry.Learning = result;
+            else
+                AddHistory(new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply));
             return result;
         }
         catch (Exception ex)
@@ -466,33 +524,66 @@ public sealed partial class Plugin : IDalamudPlugin
         }
     }
 
-    private SeString Tagged(TranslationResult result) =>
+    private SeString Tagged(TranslationResult result, ushort? color = null) =>
         new SeStringBuilder()
-            .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
+            .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", color ?? Configuration.TagColor)
             .AddText(ChatSender.FoldForGame(result.Text))
             .Build();
 
-    private async Task PrintBelowAsync(Task<TranslationResult?> translation, XivChatType type, byte[] senderBytes)
+    private async Task PrintBelowAsync(
+        Task<HistoryEntry?> translation, Task<TranslationResult?>? learning, XivChatType type, byte[] senderBytes)
     {
-        var result = await translation.ConfigureAwait(false);
+        var result = (await translation.ConfigureAwait(false))?.Translation;
+        var outType = Configuration.PrintInSameChannel ? type : Configuration.FallbackOutputChannel;
+        if (result != null)
+            await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+            {
+                Type = outType,
+                Name = SeString.Parse(senderBytes),
+                Message = Tagged(result),
+            })).ConfigureAwait(false);
+        await PrintLearningAsync(learning, outType, senderBytes, TimeSpan.FromSeconds(30)).ConfigureAwait(false);
+    }
+
+    /// <summary>Prints the learning-language line (if any) under the translation.</summary>
+    private async Task PrintLearningAsync(Task<TranslationResult?>? learning, XivChatType type, byte[] senderBytes, TimeSpan wait)
+    {
+        if (learning == null)
+            return;
+        TranslationResult? result;
+        try
+        {
+            result = await learning.WaitAsync(wait).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            return; // still lands in the /lb history when it arrives
+        }
         if (result == null)
             return;
-        var outType = Configuration.PrintInSameChannel ? type : Configuration.FallbackOutputChannel;
-        await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+        try
         {
-            Type = outType,
-            Name = SeString.Parse(senderBytes),
-            Message = Tagged(result),
-        })).ConfigureAwait(false);
+            await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+            {
+                Type = type,
+                Name = SeString.Parse(senderBytes),
+                Message = Tagged(result, Configuration.LearningTagColor),
+            })).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Could not print learning line");
+        }
     }
 
     private async Task PrintReplacementAsync(
-        Task<TranslationResult?> translation, XivChatType type, byte[] senderBytes, byte[] originalBytes, string plainText)
+        Task<HistoryEntry?> translation, Task<TranslationResult?>? learning, XivChatType type, byte[] senderBytes,
+        byte[] originalBytes, string plainText)
     {
         TranslationResult? result = null;
         try
         {
-            result = await translation.WaitAsync(TimeSpan.FromSeconds(12)).ConfigureAwait(false);
+            result = (await translation.WaitAsync(TimeSpan.FromSeconds(12)).ConfigureAwait(false))?.Translation;
         }
         catch (TimeoutException)
         {
@@ -517,6 +608,9 @@ public sealed partial class Plugin : IDalamudPlugin
         {
             Log.Error(ex, "Could not print replacement");
         }
+
+        // Keep the conversation in order: the learning line comes right after its message (short wait only).
+        await PrintLearningAsync(learning, type, senderBytes, TimeSpan.FromSeconds(6)).ConfigureAwait(false);
 
         // Forget stale "re-printed" marks (e.g. the game never echoed one back).
         foreach (var k in reprinted.Where(kv => DateTime.Now - kv.Value > TimeSpan.FromMinutes(1)).Select(kv => kv.Key).ToList())
