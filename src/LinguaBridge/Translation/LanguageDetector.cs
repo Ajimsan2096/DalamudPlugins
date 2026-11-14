@@ -39,6 +39,18 @@ public static partial class LanguageDetector
                      "di del della in con per su non sì che chi dove quando perché come molto tutto bene grazie ciao anche più"),
         ["PT"] = Set("o a os as um uma e ou mas é são era ser estou está eu você ele ela nós eles meu minha seu sua de do da " +
                      "em no na com por para não sim que quem onde quando porque como muito tudo bem obrigado obrigada olá também mais"),
+        // Russian: Cyrillic, plus "translit" (FFXIV chat cannot show Cyrillic, so Russians type in Latin letters).
+        // Short translit words that are also words elsewhere (da, net, ne, ya, ty, nu, tut...) are left out.
+        ["RU"] = Set("и в не на я что он как а то это все она так но да ты у же вы за бы по только мне было вот от меня еще ещё нет " +
+                     "из ему теперь когда даже ну если уже или быть был до вас опять вам ведь там потом себя ничего может они тут " +
+                     "где есть надо для мы тебя их чем тоже себе будет тогда кто потому какой здесь мой чтобы сейчас можно " +
+                     "привет спасибо пожалуйста пока хорошо конечно давай люблю тебе очень сегодня завтра почему " +
+                     "privet privetik kak dela chto shto eto menya tebya menja tebja tebe mne spasibo pozhaluysta pozhalujsta " +
+                     "pozhalusta poka horosho khorosho harasho nichego segodnya sevodnya zavtra seychas sejchas sechas kogda pochemu " +
+                     "potomu tozhe tozhe ochen davay davai poshli idem dobroe utro vecher spokoynoy spokojnoj lyublyu ljublju " +
+                     "ladno konechno mozhno nado khochu hochu znayu znaju vse vsem kto gde zdes chem togda esche eshche yeshche uzhe " +
+                     "rebyata rebjata mozhet budu budet byl byla bylo menja svoy moy moya tvoy tvoya ego eyo nas vas sps pzh kst " +
+                     "normalno normas krasivo krasivaya milaya milyy zaya kotik solnyshko"),
     };
 
     /// <summary>Common MMO shorthand that carries no language information.</summary>
@@ -51,6 +63,9 @@ public static partial class LanguageDetector
 
     private static HashSet<string> Set(string words) =>
         new(words.Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>MMO shorthand that carries no language information (gg, dps, tank...).</summary>
+    public static bool IsNeutralWord(string word) => Neutral.Contains(word);
 
     /// <summary>True when the text has no real words worth translating ("gg", "o/", emotes, numbers...).</summary>
     public static bool IsTrivial(string text)
@@ -67,6 +82,8 @@ public static partial class LanguageDetector
     /// </summary>
     public static string? WeakGuess(string text, IReadOnlyCollection<string> candidates)
     {
+        if (IsMostlyCyrillic(text))
+            return candidates.Contains("RU") ? "RU" : null;
         var words = WordRegex().Matches(text.ToLowerInvariant()).Select(m => m.Value.Trim('\'')).Where(w => w.Length > 0).ToList();
         var scored = StopWords.Where(kv => candidates.Contains(kv.Key))
                               .Select(kv => (Lang: kv.Key, Score: words.Count(w => kv.Value.Contains(w) || (w.Length > 1 && Slang.IsKnown(kv.Key, w)))))
@@ -85,6 +102,10 @@ public static partial class LanguageDetector
         // Japanese: kana is unambiguous.
         if (candidates.Contains("JA") && text.Any(c => c is >= '぀' and <= 'ヿ'))
             return "JA";
+
+        // Cyrillic script: Russian (Ukrainian etc. are left to the engine when Russian is not a candidate).
+        if (IsMostlyCyrillic(text))
+            return candidates.Contains("RU") ? "RU" : null;
 
         var words = WordRegex().Matches(text.ToLowerInvariant())
                                .Select(m => m.Value.Trim('\''))
@@ -124,5 +145,13 @@ public static partial class LanguageDetector
         if (best.Value >= 1 && best.Value >= second * 2 && best.Value - second >= 1)
             return best.Key;
         return null;
+    }
+
+    /// <summary>More Cyrillic letters than Latin ones.</summary>
+    private static bool IsMostlyCyrillic(string text)
+    {
+        var cyr = text.Count(Translit.IsCyrillic);
+        var latin = text.Count(c => c is >= 'A' and <= 'Z' or >= 'a' and <= 'z');
+        return cyr > 0 && cyr >= latin;
     }
 }

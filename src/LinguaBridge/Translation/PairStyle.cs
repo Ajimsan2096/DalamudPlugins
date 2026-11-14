@@ -38,11 +38,22 @@ public static class PairStyle
         ["ES"] =
             "Spanish style: natural, informal Spain Spanish chat (tú, contractions of speech), correct gender agreement, " +
             "opening ¿ ¡ marks. Endearments: cariño, amor, bebé, guapa/guapo, mi vida.",
+        ["RU"] =
+            "Russian style: natural casual Russian chat between players (ты, not вы, unless the scene is formal), correct " +
+            "case endings and verb/adjective gender for each character (он сделал / она сделала). Russian gamers keep " +
+            "common game words (танк, хил, дпс, рейд, данж, лут, маунт, афк, гг). Endearments: милая / милый, солнышко, " +
+            "зайка, котик, любимая / любимый. Laughter: \"ахаха\" or \"хаха\". Write in Cyrillic (it is converted for the game).",
     };
 
     /// <summary>How to read chat written in each source language (slang and particles engines often get wrong).</summary>
     private static readonly Dictionary<string, string> SourceNotes = new()
     {
+        ["RU"] =
+            "Reading Russian chat: FFXIV cannot show Cyrillic, so Russian players type in Latin letters (\"privet, kak " +
+            "dela\"); the text may have been converted back to Cyrillic automatically and can contain small spelling " +
+            "errors from that, read it for meaning. \"спс\" = thanks, \"пж\" = please, \"мб\" = maybe, \"хз\" = no idea, " +
+            "\"норм\" = fine, \"го\" = let's go, \"ахах\" = haha, \"зай\" / \"котик\" / \"солнышко\" addressed to someone " +
+            "are endearments (babe, sweetie), not animals / sun.",
         ["DE"] =
             "Reading German chat: modal particles (doch, ja, halt, eben, mal, schon, wohl, etwa) carry tone, not " +
             "meaning; render the tone (\"Komm doch mal her\" -> \"Come here, will you\"; \"Das ist ja süß\" -> \"Aw, " +
@@ -159,6 +170,7 @@ public static class PairStyle
         "FR" => "Target style: natural spoken French chat between close friends or partners (tu, ça, y a, je sais pas).",
         "EN" => "Target style: natural casual English chat (contractions, idioms), not literal.",
         "ES" => "Target style: natural informal Spanish chat (tú).",
+        "RU" => "Target style: natural casual Russian chat between friends (ты, not вы), correct case and gender endings.",
         "DE" => "Target style: natural casual German chat between friends or partners (du, not Sie; hab, mal, grad, echt), " +
                 "correct case and gender endings, nouns capitalised.",
         _ => string.Empty,

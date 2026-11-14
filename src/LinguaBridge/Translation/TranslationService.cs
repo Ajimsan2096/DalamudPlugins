@@ -234,8 +234,13 @@ public sealed class TranslationService : IDisposable
     private static bool IsSame(string translated, string original) =>
         string.Equals(translated.Trim(), ProtectedText.Plain(original).Trim(), StringComparison.OrdinalIgnoreCase);
 
-    private string Prepare(string text, string languageCode) =>
-        config().ExpandAbbreviations ? ProtectedText.MapUnprotected(text, part => Slang.Expand(part, languageCode)) : text;
+    private string Prepare(string text, string languageCode)
+    {
+        // Russian typed in Latin letters ("privet, kak dela") is turned back into Cyrillic: engines read it far better.
+        if (languageCode == "RU")
+            text = ProtectedText.MapUnprotected(text, Translit.ToCyrillic);
+        return config().ExpandAbbreviations ? ProtectedText.MapUnprotected(text, part => Slang.Expand(part, languageCode)) : text;
+    }
 
     private async Task<(EngineResult Result, string Engine)> CallAsync(
         ITranslator engine, string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)

@@ -298,7 +298,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
             if (result != null)
                 AddHistory(new HistoryEntry(DateTime.Now, channelPrefix.Trim() is { Length: > 0 } p ? p : "current", "You",
-                                            result with { Text = translated }, true, null));
+                                            result with { Text = body }, true, null));
             return true;
         }
         catch (Exception ex)

@@ -204,7 +204,7 @@ public sealed class ConfigWindow : Window
             var f = Array.FindIndex(Formalities, x => x.Value == cfg.DeepLFormality);
             if (f < 0) f = 0;
             ImGui.SetNextItemWidth(200);
-            if (ImGui.Combo("Formality (FR/DE/ES/IT/PT/JA)", ref f, Formalities.Select(x => x.Label).ToArray(), Formalities.Length))
+            if (ImGui.Combo("Formality (FR/DE/ES/IT/PT/JA/RU)", ref f, Formalities.Select(x => x.Label).ToArray(), Formalities.Length))
             {
                 cfg.DeepLFormality = Formalities[f].Value;
                 plugin.Translator.ClearCache();

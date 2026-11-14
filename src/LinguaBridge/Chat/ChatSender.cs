@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using FFXIVClientStructs.FFXIV.Client.System.String;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using LinguaBridge.Translation;
 
 namespace LinguaBridge.Chat;
 
@@ -45,6 +46,8 @@ public static class ChatSender
     /// </summary>
     public static string FoldForGame(string text)
     {
+        // The game font has no Cyrillic: write Russian in Latin letters, the way Russian players type in game.
+        text = Translit.ToLatin(text);
         var sb = new StringBuilder(text.Length);
         foreach (var c in text)
         {
