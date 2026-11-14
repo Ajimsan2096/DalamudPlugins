@@ -136,6 +136,9 @@ public sealed class TranslationService : IDisposable
         if (forcedTarget != null)
         {
             var guess = LanguageDetector.Detect(detectable, new[] { a.Code, b.Code, forcedTarget.Code });
+            // Russian translit is unreadable for the engine's own detection: name the source ourselves.
+            if (guess == null && forcedTarget.Code != "RU" && LanguageDetector.LooksRussian(detectable))
+                guess = "RU";
             if (guess == forcedTarget.Code)
                 return null;
             var forced = await Make(engine, text, guess == null ? null : Languages.TryGet(guess), forcedTarget, options, ct);
@@ -151,6 +154,10 @@ public sealed class TranslationService : IDisposable
             return await Make(engine, text, a, b, options, ct);
         if (detected == b.Code)
             return await Make(engine, text, b, a, options, ct);
+
+        // Russian outside the pair, typed in Latin letters: engines cannot detect translit, so say it is Russian.
+        if (translateOthers && LanguageDetector.LooksRussian(detectable))
+            return preferred.Code == "RU" ? null : await Make(engine, text, Languages.Get("RU"), preferred, options, ct);
 
         // 2) Unsure: ask the engine to translate to B with auto-detection and look at what it detected.
         var first = await CallAsync(engine, text, null, b, options, ct);

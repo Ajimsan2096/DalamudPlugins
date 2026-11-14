@@ -211,8 +211,8 @@ public sealed class CharacterProfile
     {
         var gender = Gender switch
         {
-            "male" => "male (he/him; French: il, masculine agreement)",
-            "female" => "female (she/her; French: elle, feminine agreement)",
+            "male" => "male (he/him; French: il, masculine agreement; Russian: masculine past tense and adjectives, сделал / рад)",
+            "female" => "female (she/her; French: elle, feminine agreement; Russian: feminine past tense and adjectives, сделала / рада)",
             "non-binary" => "non-binary (they/them)",
             _ => null,
         };

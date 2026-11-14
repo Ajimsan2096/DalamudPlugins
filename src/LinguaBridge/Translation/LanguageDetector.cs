@@ -40,26 +40,38 @@ public static partial class LanguageDetector
         ["PT"] = Set("o a os as um uma e ou mas é são era ser estou está eu você ele ela nós eles meu minha seu sua de do da " +
                      "em no na com por para não sim que quem onde quando porque como muito tudo bem obrigado obrigada olá também mais"),
         // Russian: Cyrillic, plus "translit" (FFXIV chat cannot show Cyrillic, so Russians type in Latin letters).
-        // Short translit words that are also words elsewhere (da, net, ne, ya, ty, nu, tut...) are left out.
+        // Short translit words shared with other languages (da, ne, nu, tut...) are left out; ty / ya / net are kept
+        // (a tie with English "ty" or French "ya" just leaves the decision to the engine).
         ["RU"] = Set("и в не на я что он как а то это все она так но да ты у же вы за бы по только мне было вот от меня еще ещё нет " +
                      "из ему теперь когда даже ну если уже или быть был до вас опять вам ведь там потом себя ничего может они тут " +
                      "где есть надо для мы тебя их чем тоже себе будет тогда кто потому какой здесь мой чтобы сейчас можно " +
                      "привет спасибо пожалуйста пока хорошо конечно давай люблю тебе очень сегодня завтра почему " +
-                     "privet privetik kak dela chto shto eto menya tebya menja tebja tebe mne spasibo pozhaluysta pozhalujsta " +
+                     "ty ya net 4to 4ego privet privetik kak dela chto shto eto menya tebya menja tebja tebe mne spasibo pozhaluysta pozhalujsta " +
                      "pozhalusta poka horosho khorosho harasho nichego segodnya sevodnya zavtra seychas sejchas sechas kogda pochemu " +
                      "potomu tozhe tozhe ochen davay davai poshli idem dobroe utro vecher spokoynoy spokojnoj lyublyu ljublju " +
                      "ladno konechno mozhno nado khochu hochu znayu znaju vse vsem kto gde zdes chem togda esche eshche yeshche uzhe " +
                      "rebyata rebjata mozhet budu budet byl byla bylo menja svoy moy moya tvoy tvoya ego eyo nas vas sps pzh kst " +
-                     "normalno normas krasivo krasivaya milaya milyy zaya kotik solnyshko"),
+                     "normalno normas krasivo krasivaya milaya milyy zaya kotik solnyshko tolko tak mogu ili budesh videt kruto takzhe tvoy svoy dlya bez pro sebya sebe dumayu kazhetsya davno skoro " +
+                     "poydem idi vot otkuda zachem kuda nichego mozhesh znaesh hochesh delaesh vidish sdelat skazat tozhe vsyo"),
     };
 
     /// <summary>Common MMO shorthand that carries no language information.</summary>
     private static readonly HashSet<string> Neutral = Set(
         "gg ty tyvm thx lol lmao rofl ok okay k kk o/ \\o o7 brb afk gl hf glhf wp np gn gm lfg lfm dps tank healer heal " +
-        "mt ot aoe tb buff debuff lb lb3 pf dc rdy ready xd haha hahaha mdr ptdr ff ffxiv fc ls cwls ex savage ult");
+        "mt ot aoe tb buff debuff lb lb3 pf dc rdy ready xd haha hahaha mdr ptdr ff ffxiv fc ls cwls ex savage ult " +
+        "wow omg wtf nice gz gratz grats xdd xddd dungeon dungeons raid raids boss loot mount quest roulette trial " +
+        "extreme glam glamour expert msq dd");
 
-    [GeneratedRegex(@"[\p{L}']+", RegexOptions.CultureInvariant)]
+    // Digits stay inside words ("4to" is Russian что, "b4" English before), but a word needs a letter.
+    [GeneratedRegex(@"[\p{L}\p{N}']*\p{L}[\p{L}\p{N}']*", RegexOptions.CultureInvariant)]
     private static partial Regex WordRegex();
+
+    [GeneratedRegex(@"zh|kh|shch|^vs[a-z]|^vz|^zd|(?:ogo|ego|tsya|sya|yy|iy|aya|uyu|yat|aesh|eesh|iesh|uesh|yaesh|tsa)$",
+                    RegexOptions.CultureInvariant)]
+    private static partial Regex TranslitShapeRegex();
+
+    /// <summary>True when the text reads as Russian (Cyrillic, or translit with a clear margin over other languages).</summary>
+    public static bool LooksRussian(string text) => Detect(text, new[] { "RU" }) == "RU";
 
     private static HashSet<string> Set(string words) =>
         new(words.Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
@@ -86,7 +98,8 @@ public static partial class LanguageDetector
             return candidates.Contains("RU") ? "RU" : null;
         var words = WordRegex().Matches(text.ToLowerInvariant()).Select(m => m.Value.Trim('\'')).Where(w => w.Length > 0).ToList();
         var scored = StopWords.Where(kv => candidates.Contains(kv.Key))
-                              .Select(kv => (Lang: kv.Key, Score: words.Count(w => kv.Value.Contains(w) || (w.Length > 1 && Slang.IsKnown(kv.Key, w)))))
+                              .Select(kv => (Lang: kv.Key, Score: words.Count(w => kv.Value.Contains(w) || (w.Length > 1 && Slang.IsKnown(kv.Key, w)) ||
+                                                                                   (kv.Key == "RU" && Translit.IsLexiconWord(w)))))
                               .OrderByDescending(x => x.Score).ToList();
         if (scored.Count == 0 || scored[0].Score == 0 || (scored.Count > 1 && scored[1].Score == scored[0].Score))
             return null;
@@ -119,7 +132,8 @@ public static partial class LanguageDetector
         // mistaken for French just because Spanish is not part of the configured pair.
         foreach (var (lang, stop) in StopWords)
         {
-            double score = words.Count(w => stop.Contains(w) || (w.Length > 1 && Slang.IsKnown(lang, w)));
+            double score = words.Count(w => stop.Contains(w) || (w.Length > 1 && Slang.IsKnown(lang, w)) ||
+                                            (lang == "RU" && Translit.IsLexiconWord(w)));
             // Elided forms (j'ai, c'est, l'eau, qu'il...) are a strong French signal.
             if (lang == "FR")
                 score += 1.5 * words.Count(w => w.Length > 2 && w[1] == '\'' && "jcdlmnstq".Contains(w[0]));
@@ -129,6 +143,9 @@ public static partial class LanguageDetector
                 score += 0.5 * text.Count(c => "ñáíóú¿¡".Contains(char.ToLowerInvariant(c)));
             if (lang == "DE")
                 score += 0.5 * text.Count(c => "äöüß".Contains(char.ToLowerInvariant(c)));
+            // Russian translit has word shapes no other language here has (zh, kh, shch, -ogo, -tsya, -yy...).
+            if (lang == "RU")
+                score += 0.5 * words.Count(w => TranslitShapeRegex().IsMatch(w));
             scores[lang] = score;
         }
 
