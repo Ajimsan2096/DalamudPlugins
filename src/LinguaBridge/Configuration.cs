@@ -85,6 +85,17 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>UIColor row used for the "[EN&gt;FR]" tag.</summary>
     public ushort TagColor { get; set; } = 45;
     public int HistorySize { get; set; } = 200;
+    /// <summary>Short "[FR]" tag instead of "[EN&gt;FR]" (fits better in narrow chat bubbles, e.g. Aetherphone's Linkpearl).</summary>
+    public bool ShortTag { get; set; } = false;
+    /// <summary>
+    /// Also translate messages another plugin already hid from the chat log (e.g. a Linkpearl channel set to
+    /// "hide from game chat"). Off by default: spam filters hide messages too.
+    /// </summary>
+    public bool TranslateHandledMessages { get; set; } = false;
+
+    // --- Translate only (clipboard) ---
+    /// <summary>The main window's compose box translates and copies instead of sending to chat.</summary>
+    public bool ComposeTranslateOnly { get; set; } = false;
 
     // --- Outgoing ---
     /// <summary>Print your original text in Echo after sending a translated message.</summary>

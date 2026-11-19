@@ -152,7 +152,25 @@ public sealed class MainWindow : Window
         }
         else
         {
-            ImGui.TextUnformatted("Write in any language; it is translated before sending. Enter = send.");
+            var only = cfg.ComposeTranslateOnly;
+            if (ImGui.RadioButton("Send to chat", !only) && only)
+            {
+                cfg.ComposeTranslateOnly = false;
+                plugin.SaveConfig();
+            }
+            ImGui.SameLine();
+            if (ImGui.RadioButton("Translate only (copy)", only) && !only)
+            {
+                cfg.ComposeTranslateOnly = true;
+                plugin.SaveConfig();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Nothing is sent: the translation is copied so you can paste it anywhere\n" +
+                                 "(Aetherphone's ChocoChat or Velvet, Discord, a website...).\n" +
+                                 "Auto: into the language you read best, or into the other language of the pair\n" +
+                                 "if the text is already in it. Also: /lb clip translates what you copied.");
+            ImGui.SameLine();
+            ImGui.TextDisabled(only ? "Enter = translate and copy." : "Translated before sending. Enter = send.");
         }
 
         if (focusInput)
@@ -174,9 +192,10 @@ public sealed class MainWindow : Window
             ImGui.SetNextItemWidth(-1);
             submitted = ImGui.InputTextWithHint("##input", "Type your message...", ref input, 400, ImGuiInputTextFlags.EnterReturnsTrue);
         }
+        var translateOnly = cfg.ComposeTranslateOnly && replyPrefix == null;
         if (submitted && !busy)
         {
-            _ = TranslateAndSend();
+            _ = translateOnly ? TranslateAndCopy() : TranslateAndSend();
             focusInput = true;
         }
 
@@ -185,6 +204,37 @@ public sealed class MainWindow : Window
         ImGui.SetNextItemWidth(170);
         if (ImGui.Combo("##target", ref t, targets, targets.Length))
             targetIndex = t - 1;
+
+        if (translateOnly)
+        {
+            ImGui.SameLine();
+            using (ImRaii.Disabled(busy || string.IsNullOrWhiteSpace(input)))
+            {
+                if (ImGui.Button("Translate & copy"))
+                    _ = TranslateAndCopy();
+            }
+            ImGui.SameLine();
+            using (ImRaii.Disabled(busy))
+            {
+                if (ImGui.Button("Paste & translate"))
+                {
+                    var clip = Clipboard.GetText();
+                    if (string.IsNullOrWhiteSpace(clip))
+                    {
+                        status = "The clipboard has no text.";
+                    }
+                    else
+                    {
+                        input = clip.Trim();
+                        _ = TranslateAndCopy();
+                    }
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Translates what you copied (Ctrl+C) and copies the translation back.");
+            }
+            DrawPreview();
+            return;
+        }
 
         ImGui.SameLine();
         using (ImRaii.Disabled(replyPrefix != null))
@@ -206,6 +256,11 @@ public sealed class MainWindow : Window
                 _ = TranslateAndSend();
         }
 
+        DrawPreview();
+    }
+
+    private void DrawPreview()
+    {
         if (preview.Length > 0)
         {
             ImGui.TextWrapped(preview);
@@ -252,6 +307,38 @@ public sealed class MainWindow : Window
                 var back = await plugin.Translator.TranslateAsync(r.Text, src, translateOthers: true);
                 backTranslation = back?.Text ?? string.Empty;
             }
+        }
+        catch (Exception ex)
+        {
+            status = ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    /// <summary>Translate-only mode: translates the box and copies the result; nothing is sent.</summary>
+    private async Task TranslateAndCopy()
+    {
+        var text = input.Trim();
+        if (text.Length == 0)
+            return;
+        busy = true;
+        status = "Translating...";
+        backTranslation = string.Empty;
+        try
+        {
+            var r = await plugin.TranslateTextAsync(text, SelectedTarget());
+            if (r == null)
+            {
+                preview = "(already in the target language)";
+                status = string.Empty;
+                return;
+            }
+            preview = r.Text;
+            plugin.CopyToClipboard(r.Text);
+            status = $"{r.Source.Code} > {r.Target.Code} ({r.Engine}), copied to the clipboard.";
         }
         catch (Exception ex)
         {

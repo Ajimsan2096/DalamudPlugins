@@ -485,12 +485,22 @@ public sealed class ConfigWindow : Window
             changed = true;
         }
 
+        var shortTag = cfg.ShortTag;
+        if (ImGui.Checkbox("Short tag: [FR] instead of [EN>FR]", ref shortTag))
+        {
+            cfg.ShortTag = shortTag;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Takes less room, handy in narrow chat bubbles such as Aetherphone's Linkpearl.");
+
         var echo = cfg.EchoOriginalOnSend;
         if (ImGui.Checkbox("After /tr, show my original text in Echo", ref echo))
         {
             cfg.EchoOriginalOnSend = echo;
             changed = true;
         }
+
+        DrawAetherphone(ref changed);
 
         ImGui.Separator();
         ImGui.TextUnformatted("Extras");
@@ -1010,6 +1020,40 @@ public sealed class ConfigWindow : Window
         }
     }
 
+    private void DrawAetherphone(ref bool changed)
+    {
+        var cfg = plugin.Configuration;
+        ImGui.Separator();
+        var detected = plugin.AetherphoneLoaded;
+        if (detected)
+            ImGui.TextColored(new Vector4(0.55f, 0.85f, 1f, 1f), "Aetherphone detected (Linkpearl)");
+        else
+            ImGui.TextUnformatted("Aetherphone (Linkpearl)");
+
+        var handled = cfg.TranslateHandledMessages;
+        if (ImGui.Checkbox("Translate messages other plugins hid from the chat log", ref handled))
+        {
+            cfg.TranslateHandledMessages = handled;
+            changed = true;
+        }
+        ImGuiComponents.HelpMarker("Turn this on if a Linkpearl channel is set to \"hide from game chat\": otherwise " +
+                                   "those messages are never translated. The translation is printed in the chat log " +
+                                   "(that is how it reaches Linkpearl), the original stays hidden.\n" +
+                                   "Careful: spam filters hide messages too, and their translations would show up.");
+
+        if (!detected)
+            return;
+        using (ImRaii.PushColor(ImGuiCol.Text, ImGui.GetStyle().Colors[(int)ImGuiCol.TextDisabled]))
+        {
+            ImGui.TextWrapped(
+                "- Linkpearl shows the translations as a second message from the same player, also in Replace mode " +
+                "(Aetherphone keeps the original). \"Below the original\" + short tag reads best there.\n" +
+                "- Send translated from Linkpearl's composer with /tr and the channel: /tr /p hello, " +
+                "/tr /t Name@World hello (without a channel it goes to the game's current channel, not the Linkpearl tab).\n" +
+                "- ChocoChat and Velvet are not game chat: use the main window in \"Translate only (copy)\" or /lb clip.");
+        }
+    }
+
     private void DrawHelp()
     {
         if (ImGui.Button("Open setup wizard"))
@@ -1029,6 +1073,11 @@ public sealed class ConfigWindow : Window
             "the same channel, or use the compose box with Preview to check the meaning before sending.\n" +
             "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb rp toggles roleplay mode, /lb wizard reruns the setup.\n\n" +
             "Party Finder: right-click a listing > \"Translate description\".\n\n" +
+            "Translate only (nothing sent): in /lb pick \"Translate only (copy)\", or copy any text and type /lb clip " +
+            "(/lb clip :fr to force a language). The translation is shown to you and copied, ready to paste in " +
+            "Aetherphone's ChocoChat or Velvet, Discord or a website.\n\n" +
+            "Aetherphone / Linkpearl: translations show up there too (as a second message). Use /tr /p ..., " +
+            "/tr /t Name@World ... in its composer to send translated. See Chat > Aetherphone.\n\n" +
             "Tip: your friends need the plugin too if they want to read your messages in their language; or simply use /tr " +
             "so they receive your text already translated.");
     }

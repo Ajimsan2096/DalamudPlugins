@@ -76,6 +76,17 @@ public sealed partial class Plugin : IDalamudPlugin
     [GeneratedRegex(@"^\[([A-Z?]{2}|PF)>[A-Z]{2}\] ", RegexOptions.CultureInvariant)]
     private static partial Regex OwnTagRegex();
 
+    /// <summary>The short "[FR] " tag (only checked while that option is on, so players' own "[EN]" lines still get translated).</summary>
+    [GeneratedRegex(@"^\[[A-Z]{2}\] ", RegexOptions.CultureInvariant)]
+    private static partial Regex OwnShortTagRegex();
+
+    private const string AetherphoneInternalName = "Aetherphone";
+    private bool aetherphoneLoaded;
+    private long aetherphoneCheckedAt; // 0 = never checked
+
+    /// <summary>Translations waiting to be put on the clipboard (ImGui can only do that during Draw).</summary>
+    private readonly ConcurrentQueue<string> pendingClipboard = new();
+
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
@@ -107,6 +118,7 @@ public sealed partial class Plugin : IDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw += FlushClipboard;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         ChatGui.ChatMessage += OnChatMessage;
@@ -122,6 +134,7 @@ public sealed partial class Plugin : IDalamudPlugin
         ChatGui.ChatMessage -= OnChatMessage;
         ContextMenu.OnMenuOpened -= OnContextMenuOpened;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw -= FlushClipboard;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         CommandManager.RemoveHandler(MainCommand);
@@ -209,7 +222,15 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private void OnMainCommand(string command, string args)
     {
-        switch (args.Trim().ToLowerInvariant())
+        var trimmed = args.Trim();
+        if (trimmed.Equals("clip", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("clip ", StringComparison.OrdinalIgnoreCase))
+        {
+            _ = TranslateClipboardCommandAsync(trimmed[4..].Trim());
+            return;
+        }
+
+        switch (trimmed.ToLowerInvariant())
         {
             case "config" or "settings":
                 ToggleConfigUi();
@@ -354,7 +375,10 @@ public sealed partial class Plugin : IDalamudPlugin
         try
         {
             var cfg = Configuration;
-            if (!cfg.IncomingEnabled || message.IsHandled)
+            // Another plugin already hid it (e.g. a Linkpearl channel set to "hide from game chat"):
+            // only translate when asked to, and never hide or re-print the original then.
+            var handledElsewhere = message.IsHandled;
+            if (!cfg.IncomingEnabled || (handledElsewhere && !cfg.TranslateHandledMessages))
                 return;
 
             var type = message.LogKind;
@@ -371,7 +395,7 @@ public sealed partial class Plugin : IDalamudPlugin
                         message.SourceKind == XivChatRelationKind.LocalPlayer ||
                         (!string.IsNullOrEmpty(me) && senderName.EndsWith(me, StringComparison.Ordinal));
             var plainText = message.Message.TextValue.Trim();
-            if (OwnTagRegex().IsMatch(plainText))
+            if (OwnTagRegex().IsMatch(plainText) || (cfg.ShortTag && OwnShortTagRegex().IsMatch(plainText)))
                 return;
             if (reprinted.TryRemove(plainText, out _))
                 return; // an original we printed back ourselves after a failed translation
@@ -413,7 +437,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 ? TranslateLearningAsync(translation, type, senderName, text, reply, ctx)
                 : null;
 
-            if (ReplaceMode)
+            if (ReplaceMode && !handledElsewhere)
             {
                 // Hide the original now; print its translation (or the original, if that fails) in arrival order.
                 message.PreventOriginal();
@@ -526,7 +550,8 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private SeString Tagged(TranslationResult result, ushort? color = null) =>
         new SeStringBuilder()
-            .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", color ?? Configuration.TagColor)
+            .AddUiForeground(Configuration.ShortTag ? $"[{result.Target.Code}] " : $"[{result.Source.Code}>{result.Target.Code}] ",
+                             color ?? Configuration.TagColor)
             .AddText(ChatSender.FoldForGame(result.Text))
             .Build();
 
@@ -615,6 +640,118 @@ public sealed partial class Plugin : IDalamudPlugin
         // Forget stale "re-printed" marks (e.g. the game never echoed one back).
         foreach (var k in reprinted.Where(kv => DateTime.Now - kv.Value > TimeSpan.FromMinutes(1)).Select(kv => kv.Key).ToList())
             reprinted.TryRemove(k, out _);
+    }
+
+    // ---------------------------------------------------------------- Aetherphone
+
+    /// <summary>True while the Aetherphone plugin (whose Linkpearl app mirrors the game chat) is loaded. Checked at most every 5 s.</summary>
+    public bool AetherphoneLoaded
+    {
+        get
+        {
+            var now = Environment.TickCount64;
+            if (aetherphoneCheckedAt != 0 && now - aetherphoneCheckedAt < 5000)
+                return aetherphoneLoaded;
+            aetherphoneCheckedAt = now;
+            try
+            {
+                aetherphoneLoaded = PluginInterface.InstalledPlugins.Any(
+                    p => p.IsLoaded && p.InternalName.Equals(AetherphoneInternalName, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Could not list installed plugins");
+                aetherphoneLoaded = false;
+            }
+            return aetherphoneLoaded;
+        }
+    }
+
+    // ---------------------------------------------------------------- translate only (clipboard)
+
+    /// <summary>
+    /// Translates text without sending it anywhere (for Aetherphone's ChocoChat / Velvet, websites, Discord...).
+    /// With no target: into the language you read best, or, if it is already in that language, into the other
+    /// language of the pair (so the same button works for reading and for writing).
+    /// Returns null when there is nothing to translate.
+    /// </summary>
+    public async Task<TranslationResult?> TranslateTextAsync(string text, Language? target)
+    {
+        text = text.Trim();
+        if (text.Length == 0)
+            return null;
+        if (target != null)
+            return await Translator.TranslateAsync(text, target, translateOthers: true).ConfigureAwait(false);
+        var preferred = Languages.Get(Configuration.PreferredLanguage);
+        return await Translator.TranslateAsync(text, preferred, translateOthers: true).ConfigureAwait(false)
+               ?? await Translator.TranslateAsync(text, translateOthers: true).ConfigureAwait(false);
+    }
+
+    /// <summary>Puts text on the clipboard on the next frame.</summary>
+    public void CopyToClipboard(string text)
+    {
+        if (!string.IsNullOrEmpty(text))
+            pendingClipboard.Enqueue(text);
+    }
+
+    private void FlushClipboard()
+    {
+        string? last = null;
+        while (pendingClipboard.TryDequeue(out var text))
+            last = text;
+        if (last != null)
+            Dalamud.Bindings.ImGui.ImGui.SetClipboardText(last);
+    }
+
+    /// <summary>/lb clip [:xx] : translates the clipboard, shows the result (only to you) and copies it back.</summary>
+    private async Task TranslateClipboardCommandAsync(string args)
+    {
+        try
+        {
+            Language? target = null;
+            if (args.StartsWith(':'))
+            {
+                target = Languages.TryGet(args[1..].Trim().ToUpperInvariant());
+                if (target == null)
+                {
+                    ChatGui.PrintError($"Unknown language \"{args[1..].Trim()}\". Example: /lb clip :fr", Tag);
+                    return;
+                }
+            }
+
+            var text = Clipboard.GetText()?.Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                ChatGui.PrintError("The clipboard has no text. Copy a message first (Ctrl+C), then /lb clip.", Tag);
+                return;
+            }
+            if (text.Length > 3000)
+                text = text[..3000];
+
+            var result = await TranslateTextAsync(text, target).ConfigureAwait(false);
+            if (result == null)
+            {
+                await Framework.RunOnFrameworkThread(() => ChatGui.Print("Nothing to translate: the text is already in that language.", Tag))
+                               .ConfigureAwait(false);
+                return;
+            }
+
+            CopyToClipboard(result.Text);
+            AddHistory(new HistoryEntry(DateTime.Now, "clipboard", "Clipboard", result, false, null));
+            await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
+            {
+                Type = XivChatType.Echo,
+                Message = new SeStringBuilder()
+                          .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
+                          .AddText(ChatSender.FoldForGame(result.Text))
+                          .AddUiForeground(" (copied)", 4)
+                          .Build(),
+            })).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            ReportError(ex, force: true);
+        }
     }
 
     // ---------------------------------------------------------------- party finder
