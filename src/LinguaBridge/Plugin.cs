@@ -19,6 +19,7 @@ using Dalamud.Plugin.Services;
 using FFXIVClientStructs.FFXIV.Client.UI;
 using LinguaBridge.Chat;
 using LinguaBridge.Translation;
+using LinguaBridge.Tutorial;
 using LinguaBridge.Windows;
 
 namespace LinguaBridge;
@@ -50,6 +51,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
     public Configuration Configuration { get; }
     public TranslationService Translator { get; }
+    public TutorialService Tutorial { get; }
 
     private readonly WindowSystem windowSystem = new("LinguaBridge");
     private readonly MainWindow mainWindow;
@@ -98,6 +100,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Translator.DeepL.SaveRequested += OnGlossarySaved;
         Translator.Llm.ProviderUnavailable += OnLlmProviderUnavailable;
 
+        Tutorial = new TutorialService(this);
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
         setupWizard = new SetupWizard(this);
@@ -107,7 +110,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
         var mainHelp = new CommandInfo(OnMainCommand)
         {
-            HelpMessage = "Open the LinguaBridge window. Add: config | wizard | on | off | toggle | rp (roleplay mode).",
+            HelpMessage = "Open the LinguaBridge window. Add: config | wizard | tour [settings] | tips on|off|reset | on | off | toggle | rp (roleplay mode).",
         };
         CommandManager.AddHandler(MainCommand, mainHelp);
         CommandManager.AddHandler(ShortCommand, new CommandInfo(OnMainCommand) { HelpMessage = "Short for /linguabridge.", ShowInHelp = false });
@@ -118,6 +121,7 @@ public sealed partial class Plugin : IDalamudPlugin
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw += Tutorial.Draw;
         PluginInterface.UiBuilder.Draw += FlushClipboard;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
@@ -134,6 +138,7 @@ public sealed partial class Plugin : IDalamudPlugin
         ChatGui.ChatMessage -= OnChatMessage;
         ContextMenu.OnMenuOpened -= OnContextMenuOpened;
         PluginInterface.UiBuilder.Draw -= windowSystem.Draw;
+        PluginInterface.UiBuilder.Draw -= Tutorial.Draw;
         PluginInterface.UiBuilder.Draw -= FlushClipboard;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUi;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
@@ -159,6 +164,28 @@ public sealed partial class Plugin : IDalamudPlugin
     public void ToggleConfigUi() => configWindow.Toggle();
     public void OpenWizard() => setupWizard.IsOpen = true;
 
+    // ---------------------------------------------------------------- tutorial hooks
+
+    public bool WizardOpen => setupWizard.IsOpen;
+    public bool InCombat => Condition[ConditionFlag.InCombat];
+    public bool MainWindowHasInput => mainWindow.HasInput;
+    public bool MainWindowHasPreview => mainWindow.HasPreview;
+
+    public bool IsWindowOpen(TourWindow window) => window switch
+    {
+        TourWindow.Main => mainWindow.IsOpen,
+        TourWindow.Config => configWindow.IsOpen,
+        _ => true,
+    };
+
+    public void OpenWindow(TourWindow window)
+    {
+        if (window == TourWindow.Main)
+            mainWindow.IsOpen = true;
+        else if (window == TourWindow.Config)
+            configWindow.IsOpen = true;
+    }
+
     public IReadOnlyList<HistoryEntry> History => history.Reverse().ToList();
     public void ClearHistory() => history.Clear();
 
@@ -177,6 +204,8 @@ public sealed partial class Plugin : IDalamudPlugin
             ChatGui.Print(enabled
                 ? "Roleplay mode ON: emotes, *actions*, \"speech\" and ((OOC)) are handled for RP."
                 : "Roleplay mode OFF.", Tag);
+        if (enabled)
+            Tutorial.ShowTip(TourContent.FirstRoleplay);
     }
 
     public void SetIncomingEnabled(bool enabled, bool announce)
@@ -237,6 +266,24 @@ public sealed partial class Plugin : IDalamudPlugin
                 break;
             case "wizard" or "setup":
                 OpenWizard();
+                break;
+            case "tour" or "tutorial" or "guide":
+                Tutorial.StartTour(TourContent.MainTourId);
+                break;
+            case "tour settings" or "tour config" or "tutorial settings" or "guide settings":
+                Tutorial.StartTour(TourContent.SettingsTourId);
+                break;
+            case "tips on":
+                Tutorial.SetTipsEnabled(true);
+                ChatGui.Print("Tips ON.", Tag);
+                break;
+            case "tips off":
+                Tutorial.SetTipsEnabled(false);
+                ChatGui.Print("Tips OFF.", Tag);
+                break;
+            case "tips reset":
+                Tutorial.ResetTips();
+                ChatGui.Print("All tips and tour offers will be shown again.", Tag);
                 break;
             case "on":
                 SetIncomingEnabled(true, announce: true);
@@ -320,6 +367,8 @@ public sealed partial class Plugin : IDalamudPlugin
             if (result != null)
                 AddHistory(new HistoryEntry(DateTime.Now, channelPrefix.Trim() is { Length: > 0 } p ? p : "current", "You",
                                             result with { Text = body }, true, null));
+            if (result != null)
+                Tutorial.ShowTip(TourContent.FirstSend);
             return true;
         }
         catch (Exception ex)
@@ -489,6 +538,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 result = result with { Text = StripLeadingName(result.Text, senderName) };
             var entry = new HistoryEntry(DateTime.Now, ChannelName(type), senderName, result, false, reply);
             AddHistory(entry);
+            Tutorial.ShowTip(TourContent.FirstTranslation);
             return entry;
         }
         catch (Exception ex)
@@ -804,6 +854,7 @@ public sealed partial class Plugin : IDalamudPlugin
             }
 
             AddHistory(new HistoryEntry(DateTime.Now, "Party Finder", "Listing", result, false, null));
+            Tutorial.ShowTip(TourContent.FirstPartyFinder);
             await Framework.RunOnFrameworkThread(() => ChatGui.Print(new XivChatEntry
             {
                 Type = XivChatType.Echo,
@@ -823,6 +874,7 @@ public sealed partial class Plugin : IDalamudPlugin
 
     private void OnFallbackUsed(string reason)
     {
+        Tutorial.ShowTip(TourContent.FirstFallback);
         if (DateTime.Now - lastFallbackPrinted < TimeSpan.FromMinutes(5))
             return;
         lastFallbackPrinted = DateTime.Now;

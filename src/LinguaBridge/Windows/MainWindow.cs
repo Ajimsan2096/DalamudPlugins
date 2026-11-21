@@ -8,6 +8,7 @@ using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LinguaBridge.Chat;
 using LinguaBridge.Translation;
+using LinguaBridge.Tutorial;
 
 namespace LinguaBridge.Windows;
 
@@ -43,8 +44,14 @@ public sealed class MainWindow : Window
         SizeCondition = ImGuiCond.FirstUseEver;
     }
 
+    internal bool HasInput => input.Trim().Length > 0;
+    internal bool HasPreview => preview.Length > 0;
+
+    public override void OnOpen() => plugin.Tutorial.ShowTip(TourContent.OfferMainTour);
+
     public override void Draw()
     {
+        plugin.Tutorial.AnchorWindow("main.window");
         DrawToolbar();
         ImGui.Separator();
         DrawHistory();
@@ -58,20 +65,24 @@ public sealed class MainWindow : Window
         var enabled = cfg.IncomingEnabled;
         if (ImGui.Checkbox("Translate chat", ref enabled))
             plugin.SetIncomingEnabled(enabled, announce: false);
+        plugin.Tutorial.Anchor("main.toggle");
         ImGui.SameLine();
         var rp = cfg.RoleplayMode;
         if (ImGui.Checkbox("RP", ref rp))
             plugin.SetRoleplayMode(rp, announce: false);
+        plugin.Tutorial.Anchor("main.rp");
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("Roleplay mode: emotes, *actions*, \"speech\", ((OOC)), long posts. Settings > Roleplay.");
         ImGui.SameLine();
         ImGui.TextDisabled($"{cfg.LanguageA} <-> {cfg.LanguageB} via {cfg.Engine}");
+        plugin.Tutorial.Anchor("main.pair");
 
         var buttons = ImGui.CalcTextSize("Settings").X + ImGui.CalcTextSize("Clear").X + ImGui.GetStyle().FramePadding.X * 4 +
                       ImGui.GetStyle().ItemSpacing.X + 4;
         ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - buttons);
         if (ImGui.Button("Settings"))
             plugin.ToggleConfigUi();
+        plugin.Tutorial.Anchor("main.settings");
         ImGui.SameLine();
         if (ImGui.Button("Clear"))
             plugin.ClearHistory();
@@ -84,6 +95,7 @@ public sealed class MainWindow : Window
         using var child = ImRaii.Child("history", new Vector2(0, -composeHeight), true);
         if (!child)
             return;
+        plugin.Tutorial.AnchorWindow("main.history");
 
         var history = plugin.History;
         if (history.Count == 0)
@@ -112,6 +124,7 @@ public sealed class MainWindow : Window
                     replyPrefix = e.ReplyPrefix;
                     replyLabel = $"{e.Channel} - {e.Sender}";
                     focusInput = true;
+                    plugin.Tutorial.ShowTip(TourContent.FirstReply);
                 }
             }
             ImGui.TextWrapped(e.Translation.Text);
@@ -153,6 +166,7 @@ public sealed class MainWindow : Window
         else
         {
             var only = cfg.ComposeTranslateOnly;
+            ImGui.BeginGroup();
             if (ImGui.RadioButton("Send to chat", !only) && only)
             {
                 cfg.ComposeTranslateOnly = false;
@@ -163,12 +177,15 @@ public sealed class MainWindow : Window
             {
                 cfg.ComposeTranslateOnly = true;
                 plugin.SaveConfig();
+                plugin.Tutorial.ShowTip(TourContent.FirstTranslateOnly);
             }
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Nothing is sent: the translation is copied so you can paste it anywhere\n" +
                                  "(Aetherphone's ChocoChat or Velvet, Discord, a website...).\n" +
                                  "Auto: into the language you read best, or into the other language of the pair\n" +
                                  "if the text is already in it. Also: /lb clip translates what you copied.");
+            ImGui.EndGroup();
+            plugin.Tutorial.Anchor("main.mode");
             ImGui.SameLine();
             ImGui.TextDisabled(only ? "Enter = translate and copy." : "Translated before sending. Enter = send.");
         }
@@ -185,12 +202,14 @@ public sealed class MainWindow : Window
             submitted = ImGui.InputTextMultiline("##input", ref input, 2000,
                                                  new Vector2(-1, ImGui.GetTextLineHeight() * 4.5f),
                                                  ImGuiInputTextFlags.EnterReturnsTrue);
+            plugin.Tutorial.Anchor("main.input");
             ImGui.TextDisabled($"{System.Text.Encoding.UTF8.GetByteCount(input)} bytes (chat line limit 500, longer posts are split)");
         }
         else
         {
             ImGui.SetNextItemWidth(-1);
             submitted = ImGui.InputTextWithHint("##input", "Type your message...", ref input, 400, ImGuiInputTextFlags.EnterReturnsTrue);
+            plugin.Tutorial.Anchor("main.input");
         }
         var translateOnly = cfg.ComposeTranslateOnly && replyPrefix == null;
         if (submitted && !busy)
@@ -204,6 +223,7 @@ public sealed class MainWindow : Window
         ImGui.SetNextItemWidth(170);
         if (ImGui.Combo("##target", ref t, targets, targets.Length))
             targetIndex = t - 1;
+        plugin.Tutorial.Anchor("main.target");
 
         if (translateOnly)
         {
@@ -213,6 +233,7 @@ public sealed class MainWindow : Window
                 if (ImGui.Button("Translate & copy"))
                     _ = TranslateAndCopy();
             }
+            plugin.Tutorial.Anchor("main.preview");
             ImGui.SameLine();
             using (ImRaii.Disabled(busy))
             {
@@ -243,12 +264,14 @@ public sealed class MainWindow : Window
             var channelLabels = Array.ConvertAll(SendChannels, c => c.Label);
             ImGui.Combo("##channel", ref channelIndex, channelLabels, channelLabels.Length);
         }
+        plugin.Tutorial.Anchor("main.channel");
 
         ImGui.SameLine();
         using (ImRaii.Disabled(busy || string.IsNullOrWhiteSpace(input)))
         {
             if (ImGui.Button("Preview"))
                 _ = Preview();
+            plugin.Tutorial.Anchor("main.preview");
             if (ImGui.IsItemHovered())
                 ImGui.SetTooltip("Translate without sending, and show a back-translation to check the meaning.");
             ImGui.SameLine();

@@ -9,6 +9,7 @@ using Dalamud.Interface.Components;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LinguaBridge.Translation;
+using LinguaBridge.Tutorial;
 
 namespace LinguaBridge.Windows;
 
@@ -71,26 +72,54 @@ public sealed class ConfigWindow : Window
         learningPlayersText = string.Join(", ", plugin.Configuration.LearningPlayers);
     }
 
+    public override void OnOpen() => plugin.Tutorial.ShowTip(TourContent.OfferSettingsTour);
+
     public override void Draw()
     {
+        plugin.Tutorial.AnchorWindow("config.window");
         using var tabs = ImRaii.TabBar("tabs");
         if (!tabs)
             return;
-        using (var tab = ImRaii.TabItem("Engine"))
+        using (var tab = ImRaii.TabItem("Engine", TabFlags("Engine")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Engine");
             if (tab) DrawEngine();
-        using (var tab = ImRaii.TabItem("Languages"))
+        }
+        using (var tab = ImRaii.TabItem("Languages", TabFlags("Languages")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Languages");
             if (tab) DrawLanguages();
-        using (var tab = ImRaii.TabItem("Chat"))
+        }
+        using (var tab = ImRaii.TabItem("Chat", TabFlags("Chat")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Chat");
             if (tab) DrawChat();
-        using (var tab = ImRaii.TabItem("Roleplay"))
+        }
+        using (var tab = ImRaii.TabItem("Roleplay", TabFlags("Roleplay")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Roleplay");
             if (tab) DrawRoleplay();
-        using (var tab = ImRaii.TabItem("AI"))
+        }
+        using (var tab = ImRaii.TabItem("AI", TabFlags("AI")))
+        {
+            plugin.Tutorial.Anchor("config.tab.AI");
             if (tab) DrawAi();
-        using (var tab = ImRaii.TabItem("Glossary"))
+        }
+        using (var tab = ImRaii.TabItem("Glossary", TabFlags("Glossary")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Glossary");
             if (tab) DrawGlossary();
-        using (var tab = ImRaii.TabItem("Help"))
+        }
+        using (var tab = ImRaii.TabItem("Help", TabFlags("Help")))
+        {
+            plugin.Tutorial.Anchor("config.tab.Help");
             if (tab) DrawHelp();
+        }
     }
+
+    /// <summary>Lets the guided tour switch to a tab.</summary>
+    private ImGuiTabItemFlags TabFlags(string label) =>
+        plugin.Tutorial.ConsumeTabRequest(label) ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
 
     private void DrawEngine()
     {
@@ -1059,6 +1088,10 @@ public sealed class ConfigWindow : Window
         if (ImGui.Button("Open setup wizard"))
             plugin.OpenWizard();
         ImGui.Spacing();
+        DrawTutorialOptions();
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
         ImGui.TextWrapped(
             "Incoming: messages in the selected channels are translated automatically and shown below the original " +
             "with a tag like [EN>FR]. Only you see the translation.\n\n" +
@@ -1071,7 +1104,8 @@ public sealed class ConfigWindow : Window
             "  /tr :en /fc Merci beaucoup     -> force English\n\n" +
             "/lb (or /linguabridge) opens the history window: press \"Reply\" on a message to answer it translated in " +
             "the same channel, or use the compose box with Preview to check the meaning before sending.\n" +
-            "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb rp toggles roleplay mode, /lb wizard reruns the setup.\n\n" +
+            "/lb config opens settings, /lb on|off|toggle switches incoming translation, /lb rp toggles roleplay mode, /lb wizard reruns the setup, " +
+            "/lb tour starts the guided tour.\n\n" +
             "Party Finder: right-click a listing > \"Translate description\".\n\n" +
             "Translate only (nothing sent): in /lb pick \"Translate only (copy)\", or copy any text and type /lb clip " +
             "(/lb clip :fr to force a language). The translation is shown to you and copied, ready to paste in " +
@@ -1080,6 +1114,29 @@ public sealed class ConfigWindow : Window
             "/tr /t Name@World ... in its composer to send translated. See Chat > Aetherphone.\n\n" +
             "Tip: your friends need the plugin too if they want to read your messages in their language; or simply use /tr " +
             "so they receive your text already translated.");
+    }
+
+    private void DrawTutorialOptions()
+    {
+        var cfg = plugin.Configuration;
+        ImGui.BeginGroup();
+        ImGui.TextUnformatted("Guided tour and tips");
+        if (ImGui.Button("Tour of the main window"))
+            plugin.Tutorial.StartTour(TourContent.MainTourId);
+        ImGui.SameLine();
+        if (ImGui.Button("Tour of the settings"))
+            plugin.Tutorial.StartTour(TourContent.SettingsTourId);
+        var tips = cfg.TipsEnabled;
+        if (ImGui.Checkbox("Show tips the first time I use a feature", ref tips))
+            plugin.Tutorial.SetTipsEnabled(tips);
+        ImGui.SameLine();
+        if (ImGui.Button("Show all tips again"))
+            plugin.Tutorial.ResetTips();
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Every tip and tour offer will appear again when it makes sense.");
+        ImGui.TextDisabled("Also: /lb tour, /lb tour settings, /lb tips on|off|reset");
+        ImGui.EndGroup();
+        plugin.Tutorial.Anchor("config.help.tutorial");
     }
 
     private static int IndexOf(string code)

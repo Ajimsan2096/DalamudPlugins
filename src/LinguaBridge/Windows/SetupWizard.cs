@@ -7,6 +7,7 @@ using Dalamud.Game.Text;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
 using LinguaBridge.Translation;
+using LinguaBridge.Tutorial;
 
 namespace LinguaBridge.Windows;
 
@@ -64,9 +65,9 @@ public sealed class SetupWizard : Window
         ImGui.Separator();
         if (step > 1 && ImGui.Button("Back", new Vector2(90, 0)))
             step--;
-        ImGui.SameLine(ImGui.GetContentRegionAvail().X - 180 + ImGui.GetCursorPosX());
         if (step < Steps)
         {
+            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 180 + ImGui.GetCursorPosX());
             if (ImGui.Button("Skip setup", new Vector2(90, 0)))
                 Finish();
             ImGui.SameLine();
@@ -75,19 +76,26 @@ public sealed class SetupWizard : Window
         }
         else
         {
-            ImGui.Dummy(new Vector2(90, 0));
-            ImGui.SameLine();
+            ImGui.SameLine(ImGui.GetContentRegionAvail().X - 270 + ImGui.GetCursorPosX());
             if (ImGui.Button("Finish", new Vector2(90, 0)))
-                Finish();
+                Finish(tour: false);
+            ImGui.SameLine();
+            using (ImRaii.PushColor(ImGuiCol.Button, new Vector4(0.40f, 0.78f, 1f, 0.55f)))
+            {
+                if (ImGui.Button("Finish + guided tour", new Vector2(170, 0)))
+                    Finish(tour: true);
+            }
         }
     }
 
-    private void Finish()
+    private void Finish(bool tour = false)
     {
         plugin.Configuration.ShowedWizard = true;
         plugin.Translator.ClearCache();
         plugin.SaveConfig();
         IsOpen = false;
+        if (tour)
+            plugin.Tutorial.StartTour(TourContent.MainTourId);
     }
 
     private void DrawLanguages()
@@ -123,6 +131,13 @@ public sealed class SetupWizard : Window
         var both = !cfg.IncomingOnlyToPreferred;
         if (ImGui.Checkbox("I want translations in both directions (I read neither language well)", ref both))
             cfg.IncomingOnlyToPreferred = !both;
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        var tips = cfg.TipsEnabled;
+        if (ImGui.Checkbox("Show short tips the first time I use a feature", ref tips))
+            cfg.TipsEnabled = tips;
+        ImGui.TextDisabled("You can turn them off at any time (Settings > Help, or /lb tips off).");
     }
 
     private void DrawEngine()
@@ -233,7 +248,8 @@ public sealed class SetupWizard : Window
             "- The \"LB\" entry at the top right of the screen turns translation on/off (left click) " +
             "or opens the window (right click).\n\n" +
             "- In Party Finder, right-click a listing > \"Translate description\".\n\n" +
-            "- /lb config for all settings, /lb wizard to see this again.");
+            "- /lb config for all settings, /lb wizard to see this again.\n\n" +
+            "New here? \"Finish + guided tour\" shows you around the window step by step (or later: /lb tour).");
     }
 
     private static int IndexOf(string code)

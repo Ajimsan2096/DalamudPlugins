@@ -13,6 +13,14 @@ public sealed class Configuration : IPluginConfiguration
     public int Version { get; set; } = 1;
     public bool ShowedWizard { get; set; } = false;
 
+    // --- Tutorial ---
+    /// <summary>Show one-time contextual tips and offer the guided tours.</summary>
+    public bool TipsEnabled { get; set; } = true;
+    /// <summary>Ids of the tips already shown (or dismissed).</summary>
+    public HashSet<string> SeenTips { get; set; } = new();
+    /// <summary>Ids of the guided tours finished or skipped (they are not offered again).</summary>
+    public HashSet<string> CompletedTours { get; set; } = new();
+
     // --- Engine ---
     public TranslationEngine Engine { get; set; } = TranslationEngine.Google;
     /// <summary>Legacy single key (v1.0-1.1); migrated into <see cref="DeepLApiKeys"/> on load.</summary>
