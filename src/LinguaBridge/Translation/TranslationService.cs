@@ -25,6 +25,14 @@ public sealed class TranslationService : IDisposable
     /// <summary>RP shorthand kept as-is in roleplay mode.</summary>
     private static readonly string[] RoleplayShorthand = { "OOC", "IC", "RP", "ERP", "LRP", "MRP", "HRP", "AFK", "BRB" };
 
+    /// <summary>
+    /// Gaming acronyms that are not words in any language: always kept as typed (engines turn "RIP" into
+    /// "QEPD", "GG WP" into nonsense...). "RIP" only in capitals, so the English verb "rip" is still translated.
+    /// </summary>
+    private static readonly string[] GamingAcronyms =
+        { "GG", "GGs", "GGWP", "GGEZ", "WP", "GJ", "GLHF", "AFK", "BRB", "BBL", "BBIAB", "LFG", "LFM", "LMAO", "LMFAO", "ROFL", "XD" };
+    private static readonly string[] CaseSensitiveAcronyms = { "RIP" };
+
     private readonly Func<Configuration> config;
     private readonly HttpClient http;
     private readonly SemaphoreSlim concurrency = new(3);
@@ -85,6 +93,10 @@ public sealed class TranslationService : IDisposable
         var preferred = Languages.Get(cfg.PreferredLanguage);
         var engine = Engine;
 
+        // Only jargon / interjections ("RIP", "yep", "gg wp", "yush", "jajaja"): already readable, nothing to translate.
+        if (LanguageDetector.IsTrivial(ProtectedText.WithoutProtected(text)))
+            return null;
+
         var protectedTerms = new List<string>(cfg.ProtectedTerms);
         if (cfg.AutoProtectNames)
         {
@@ -99,7 +111,9 @@ public sealed class TranslationService : IDisposable
             if (cfg.RoleplayMode)
                 protectedTerms.AddRange(RoleplayShorthand);
         }
+        protectedTerms.AddRange(GamingAcronyms);
         text = ProtectedText.ProtectTerms(text, protectedTerms);
+        text = ProtectedText.ProtectTerms(text, CaseSensitiveAcronyms, ignoreCase: false);
         var options = new TranslateOptions(cfg.ContextLines > 0 ? context?.History : null, cfg.RoleplayMode,
                                            DescribeCharacters(cfg, context));
 

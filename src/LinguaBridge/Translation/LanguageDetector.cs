@@ -27,7 +27,9 @@ public static partial class LanguageDetector
                      "muy todo todos bien gracias hola vale porque también más menos puedo quiero hay vamos " +
                      "como eres soy somos quien quién verdad esto esta eso así mas ti lo nos sin entonces ahora aquí " +
                      "algo nada tan hoy solo sólo cuando donde tengo tienes hace hacer voy vas estamos mucho muchísimo muchisimo " +
-                     "pues bueno claro oye mira vale guapa guapo cariño amor también tú"),
+                     "pues bueno claro oye mira vale guapa guapo cariño amor también tú " +
+                     // short Spanish words (not French): "ha sido", "otra vez"
+                     "he ha han hemos otra otro vez"),
         ["DE"] = Set("der die das ein eine und oder aber ist sind war sein bin bist ich du er sie es wir ihr mich mein dein " +
                      "nicht kein ja nein mit von zu im am für auf aus wie was wer wo wann warum sehr alles gut danke hallo bitte " +
                      "auch noch schon mal kann will muss gibt den dem einen einem einer nichts habe hab hast haben " +
@@ -55,12 +57,54 @@ public static partial class LanguageDetector
                      "poydem idi vot otkuda zachem kuda nichego mozhesh znaesh hochesh delaesh vidish sdelat skazat tozhe vsyo"),
     };
 
-    /// <summary>Common MMO shorthand that carries no language information.</summary>
+    /// <summary>
+    /// Gaming / chat jargon and interjections that carry no language information: a message made only of
+    /// these is not translated, and they never count as a vote for a language (a lone "Yes!" or "RIP" in a
+    /// Spanish message must not make it "mixed" with English).
+    /// Words that are also real words or chat shorthand in a supported language are deliberately left out:
+    /// ya (ES/FR), yo (ES), no, nu / da / net (RU), ns / tb-style ES shorthand, bb / nn (FR/DE), war (DE), hallo...
+    /// </summary>
     private static readonly HashSet<string> Neutral = Set(
-        "gg ty tyvm thx lol lmao rofl ok okay k kk o/ \\o o7 brb afk gl hf glhf wp np gn gm lfg lfm dps tank healer heal " +
-        "mt ot aoe tb buff debuff lb lb3 pf dc rdy ready xd haha hahaha mdr ptdr ff ffxiv fc ls cwls ex savage ult " +
-        "wow omg wtf nice gz gratz grats xdd xddd dungeon dungeons raid raids boss loot mount quest roulette trial " +
-        "extreme glam glamour expert msq dd");
+        // yes / agreement (also cute and elongated spellings: yush, yesh, yasss...)
+        "yes yep yup yeah yea yeh yah ye yee yus yush yesh yis yiss yas yass yaas yaass yessir yessss aye " +
+        "ok okay okie okey oki okii okk okies okiedokie okidoki okeydokey dokie dokey doki kk kay mkay mhm mhmm uhhuh huh " +
+        "aight ight aite alr alright roger rgr " +
+        // no / disagreement
+        "nope nop nah naw nuh nay nawp " +
+        // laughter, memes and streaming emotes (repeated forms like hahaha / jajaja / xdddd / kkkk are matched by pattern)
+        "lol lul lel lmao lmfao rofl roflmao kek kekw lulw omegalul xd xdd xddd mdr ptdr xptdr kappa pog poggers " +
+        "pogchamp copium hopium sadge monkas uwu owo nya rawr xoxo hah heh " +
+        // reactions and interjections
+        "rip oof ouch oops oopsie whoops welp yikes bruh bro wow woah whoa omg omfg wtf wth ffs damn dang darn dayum " +
+        "gosh geez jeez sheesh yay woo woot w00t hype nice noice cool kewl hm hmm uh umm uhm erm eh ah oh ooh aw aww " +
+        "ew eww ugh meh psst shh phew whew tsk pff pfft bah boo yum ay ayy uy ups aie " +
+        // thanks / congrats / sportsmanship
+        "gg ggs ggwp ggez wp gj nt gl hf glhf ez ezpz rekt pwned noob nub n00b ty tyty tyvm tysm thx thnx tnx yw np " +
+        "gz gratz grats congrats congratz " +
+        // greetings and coming / going (o/ \o o7 are not words; they are filtered out before)
+        "o7 hi hii hey heya hiya hai hello howdy sup wassup re wb gn gm nite gnite nini cya bye byee bai " +
+        "brb bbl bbiab afk " +
+        // MMO / FFXIV shorthand
+        "lfg lfm lfp lf1m lf2m lf3m dps tank tanks healer healers heal heals melee caster mt ot aoe tb tbs buff " +
+        "debuff nerf lb lb1 lb2 lb3 pf df dc rdy ready inc oom rez gcd ogcd cd cds dot aggro mech mechs " +
+        "ff ff14 ffxiv xiv fc ls cwls ex savage ult unreal dungeon dungeons raid raids boss loot mount quest " +
+        "roulette trial extreme glam glamour expert msq dd ilvl gil fate fates sprout ooc rp erp " +
+        // FFXIV jobs (WAR is left out: German "war")
+        "pld drk gnb whm sch ast sge mnk drg nin sam rpr vpr brd mch dnc blm smn rdm pct blu");
+
+    /// <summary>Laughter typed as repeated syllables: haha, ahah, hehe, jajaja, jejeje, kkkk, rsrs, xdddd, looool, ахаха...</summary>
+    [GeneratedRegex(@"^(?:a?(?:ha){2,}h?|(?:ah){2,}a?|(?:he){2,}h?|(?:hi){2,}h?|(?:ho){2,}|a?(?:ja){2,}j?|(?:je){2,}j?|(?:ji){2,}|" +
+                    @"(?:ke){2,}k?|k{3,}|(?:rs){2,}|x+d+|l+[o0]+l+|lmf?a+o+|w{3,}|а?(?:ха){2,}х?|(?:ах){2,}а?|(?:хе){2,}|(?:хи){2,})$",
+                    RegexOptions.CultureInvariant)]
+    private static partial Regex LaughterRegex();
+
+    /// <summary>Letters repeated 3+ times ("yesss", "noooope", "riiip").</summary>
+    [GeneratedRegex(@"(\p{L})\1{2,}", RegexOptions.CultureInvariant)]
+    private static partial Regex LongRunRegex();
+
+    /// <summary>Doubled letters ("yess", "hii").</summary>
+    [GeneratedRegex(@"(\p{L})\1+", RegexOptions.CultureInvariant)]
+    private static partial Regex RunRegex();
 
     // Digits stay inside words ("4to" is Russian что, "b4" English before), but a word needs a letter.
     [GeneratedRegex(@"[\p{L}\p{N}']*\p{L}[\p{L}\p{N}']*", RegexOptions.CultureInvariant)]
@@ -76,8 +120,40 @@ public static partial class LanguageDetector
     private static HashSet<string> Set(string words) =>
         new(words.Split(' ', StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>MMO shorthand that carries no language information (gg, dps, tank...).</summary>
-    public static bool IsNeutralWord(string word) => Neutral.Contains(word);
+    /// <summary>
+    /// Jargon that carries no language information (gg, rip, yep, dps, tank...), including elongated
+    /// spellings ("yesss", "riiip", "okkk") and typed laughter ("hahaha", "jajaja", "xdddd").
+    /// </summary>
+    public static bool IsNeutralWord(string word)
+    {
+        if (word.Length == 0)
+            return false;
+        if (Neutral.Contains(word))
+            return true;
+        var lower = word.ToLowerInvariant();
+        if (LaughterRegex().IsMatch(lower))
+            return true;
+        // Elongations: "yesss" -> "yess" / "yes", "noooope" -> "noope" / "nope", "hmmmm" -> "hmm".
+        var two = LongRunRegex().Replace(lower, "$1$1");
+        if (two != lower && Neutral.Contains(two))
+            return true;
+        var one = RunRegex().Replace(lower, "$1");
+        return one != lower && one.Length > 1 && Neutral.Contains(one);
+    }
+
+    /// <summary>
+    /// True when <paramref name="word"/> counts as evidence for <paramref name="lang"/>. Neutral jargon does not,
+    /// unless it is that language's own chat shorthand (Spanish "tb" = también, English "ty") or Russian
+    /// translit (where "ty" is ты).
+    /// </summary>
+    private static bool Votes(string lang, string word, HashSet<string> stop)
+    {
+        var known = stop.Contains(word) || (word.Length > 1 && Slang.IsKnown(lang, word)) ||
+                    (lang == "RU" && Translit.IsLexiconWord(word));
+        if (!known)
+            return false;
+        return lang == "RU" || Slang.IsKnown(lang, word) || !IsNeutralWord(word);
+    }
 
     /// <summary>True when the text has no real words worth translating ("gg", "o/", emotes, numbers...).</summary>
     public static bool IsTrivial(string text)
@@ -85,7 +161,7 @@ public static partial class LanguageDetector
         var words = WordRegex().Matches(text).Select(m => m.Value).ToList();
         if (words.Count == 0)
             return true;
-        return words.All(w => Neutral.Contains(w) || w.Length == 1);
+        return words.All(w => w.Length == 1 || IsNeutralWord(w.Trim('\'')));
     }
 
     /// <summary>
@@ -98,8 +174,7 @@ public static partial class LanguageDetector
             return candidates.Contains("RU") ? "RU" : null;
         var words = WordRegex().Matches(text.ToLowerInvariant()).Select(m => m.Value.Trim('\'')).Where(w => w.Length > 0).ToList();
         var scored = StopWords.Where(kv => candidates.Contains(kv.Key))
-                              .Select(kv => (Lang: kv.Key, Score: words.Count(w => kv.Value.Contains(w) || (w.Length > 1 && Slang.IsKnown(kv.Key, w)) ||
-                                                                                   (kv.Key == "RU" && Translit.IsLexiconWord(w)))))
+                              .Select(kv => (Lang: kv.Key, Score: words.Count(w => Votes(kv.Key, w, kv.Value))))
                               .OrderByDescending(x => x.Score).ToList();
         if (scored.Count == 0 || scored[0].Score == 0 || (scored.Count > 1 && scored[1].Score == scored[0].Score))
             return null;
@@ -132,8 +207,7 @@ public static partial class LanguageDetector
         // mistaken for French just because Spanish is not part of the configured pair.
         foreach (var (lang, stop) in StopWords)
         {
-            double score = words.Count(w => stop.Contains(w) || (w.Length > 1 && Slang.IsKnown(lang, w)) ||
-                                            (lang == "RU" && Translit.IsLexiconWord(w)));
+            double score = words.Count(w => Votes(lang, w, stop));
             // Elided forms (j'ai, c'est, l'eau, qu'il...) are a strong French signal.
             if (lang == "FR")
                 score += 1.5 * words.Count(w => w.Length > 2 && w[1] == '\'' && "jcdlmnstq".Contains(w[0]));

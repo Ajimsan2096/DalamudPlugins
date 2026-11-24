@@ -45,13 +45,13 @@ public static partial class ProtectedText
     }
 
     /// <summary>Wraps whole-word occurrences of <paramref name="terms"/> (outside existing spans).</summary>
-    public static string ProtectTerms(string text, IEnumerable<string> terms)
+    public static string ProtectTerms(string text, IEnumerable<string> terms, bool ignoreCase = true)
     {
         var list = terms.Select(t => t.Trim()).Where(t => t.Length > 0).OrderByDescending(t => t.Length).ToList();
         if (list.Count == 0)
             return text;
         var pattern = @"(?<![\p{L}\p{N}])(" + string.Join("|", list.Select(Regex.Escape)) + @")(?![\p{L}\p{N}])";
-        var regex = new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        var regex = new Regex(pattern, (ignoreCase ? RegexOptions.IgnoreCase : RegexOptions.None) | RegexOptions.CultureInvariant);
         return MapUnprotected(text, part => regex.Replace(part, m => Wrap(m.Value)));
     }
 
