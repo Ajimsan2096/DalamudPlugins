@@ -17,9 +17,24 @@ public sealed class GoogleTranslator(HttpClient http) : ITranslator
 
     public async Task<EngineResult> TranslateAsync(string text, Language? source, Language target, TranslateOptions options, CancellationToken ct)
     {
-        var url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
-                  $"&sl={source?.GoogleCode ?? "auto"}&tl={target.GoogleCode}&q={Uri.EscapeDataString(ProtectedText.Plain(text))}";
         _ = options; // Google has no context/glossary support
+        // Protected spans (item links, names) travel as {0} placeholders so Google does not translate them;
+        // if a placeholder comes back damaged, the plain text is translated instead.
+        if (ProtectedText.HasProtected(text))
+        {
+            var query = ProtectedText.ToPlaceholders(text, out var spans);
+            var r = await RequestAsync(query, source, target, ct).ConfigureAwait(false);
+            var restored = ProtectedText.FromPlaceholders(r.Text, spans);
+            if (restored != null)
+                return r with { Text = restored };
+        }
+        return await RequestAsync(ProtectedText.Plain(text), source, target, ct).ConfigureAwait(false);
+    }
+
+    private async Task<EngineResult> RequestAsync(string query, Language? source, Language target, CancellationToken ct)
+    {
+        var url = "https://translate.googleapis.com/translate_a/single?client=gtx&dt=t" +
+                  $"&sl={source?.GoogleCode ?? "auto"}&tl={target.GoogleCode}&q={Uri.EscapeDataString(query)}";
 
         using var response = await http.GetAsync(url, ct).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

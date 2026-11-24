@@ -55,6 +55,41 @@ public static partial class ProtectedText
         return MapUnprotected(text, part => regex.Replace(part, m => Wrap(m.Value)));
     }
 
+    /// <summary>
+    /// For engines without tag support (Google): each protected span becomes a "{0}", "{1}"... placeholder,
+    /// which engines leave alone, so item links and names are not translated ("Espada Hydatos Aumentada").
+    /// </summary>
+    public static string ToPlaceholders(string text, out List<string> spans)
+    {
+        var found = new List<string>();
+        var result = SpanRegex().Replace(text, m =>
+        {
+            found.Add(m.Value[1..^1]);
+            return "{" + (found.Count - 1) + "}";
+        });
+        spans = found;
+        return result;
+    }
+
+    /// <summary>Puts the spans back; null when the engine lost, repeated or garbled a placeholder.</summary>
+    public static string? FromPlaceholders(string translated, IReadOnlyList<string> spans)
+    {
+        var seen = new int[spans.Count];
+        var ok = true;
+        var result = PlaceholderRegex().Replace(translated, m =>
+        {
+            var i = int.Parse(m.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture);
+            if (i >= spans.Count)
+            {
+                ok = false;
+                return m.Value;
+            }
+            seen[i]++;
+            return spans[i];
+        });
+        return ok && seen.All(n => n == 1) ? result : null;
+    }
+
     public static string ToDeepLXml(string text)
     {
         var escaped = WebUtility.HtmlEncode(text); // escapes & < > " '
@@ -63,6 +98,9 @@ public static partial class ProtectedText
 
     public static string FromDeepLXml(string text) =>
         WebUtility.HtmlDecode(text.Replace("<x>", "").Replace("</x>", ""));
+
+    [GeneratedRegex(@"\{\s*(\d{1,2})\s*\}", RegexOptions.CultureInvariant)]
+    private static partial Regex PlaceholderRegex();
 
     [GeneratedRegex("\u0002[^\u0003]*\u0003", RegexOptions.CultureInvariant)]
     private static partial Regex SpanRegex();

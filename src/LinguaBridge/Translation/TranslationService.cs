@@ -143,7 +143,7 @@ public sealed class TranslationService : IDisposable
         var detectable = ProtectedText.WithoutProtected(text);
 
         // Messages that mix languages ("Spanish speech *English action* Spanish") are handled chunk by chunk.
-        var chunks = MixedText.Split(text);
+        var chunks = MixedText.Split(text, new[] { a.Code, b.Code, forcedTarget?.Code ?? b.Code }.Distinct().ToArray());
         if (MixedText.IsMixed(chunks))
             return await TranslateMixedAsync(engine, text, chunks, a, b, forcedTarget, translateOthers, options, ct);
 

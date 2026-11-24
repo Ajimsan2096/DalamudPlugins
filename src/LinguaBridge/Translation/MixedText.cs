@@ -19,8 +19,12 @@ public static partial class MixedText
 
     private static readonly string[] AllCodes = Languages.All.Select(l => l.Code).ToArray();
 
-    /// <summary>Language chunks (adjacent chunks in the same language merged). Unknown chunks inherit a neighbour's language.</summary>
-    public static List<Chunk> Split(string text)
+    /// <summary>
+    /// Language chunks (adjacent chunks in the same language merged). Unknown chunks inherit a neighbour's language.
+    /// <paramref name="pair"/> (the user's languages) gives undecided chunks a second, narrower look: a short
+    /// "Dime, ¿qué te trae aquí?" before English text is Spanish against English even if it could also be Portuguese.
+    /// </summary>
+    public static List<Chunk> Split(string text, IReadOnlyCollection<string>? pair = null)
     {
         var pieces = new List<(string Text, string Trailing)>();
         foreach (var token in Tokens(text))
@@ -39,7 +43,8 @@ public static partial class MixedText
         {
             var plain = ProtectedText.WithoutProtected(p.Text);
             // Two pieces of evidence at least: one shared word ("te", "si", "so") must not make a Spanish sentence French.
-            return LanguageDetector.Detect(plain, AllCodes, minScore: 2);
+            return LanguageDetector.Detect(plain, AllCodes, minScore: 2) ??
+                   (pair is { Count: >= 2 } ? LanguageDetector.Detect(plain, pair, minScore: 1.5, onlyCandidates: true) : null);
         }).ToList();
         // Short or ambiguous chunks ("Estoy...", "Ys,", "*sonríe*") take the language of the chunk before (or after) them.
         for (var i = 1; i < langs.Count; i++)

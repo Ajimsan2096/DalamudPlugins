@@ -94,6 +94,8 @@ public static partial class Translit
         ("ploshadi ploshchadi", "площади"), ("ploshad ploshchad", "площадь"), ("kidai kidaj kiday", "кидай"),
         ("ishu ishchu", "ищу"), ("rotacii rotatsii", "ротации"), ("meropriyatii", "мероприятии"),
         ("zdorove zdorovye", "здоровье"), ("pozhalsta", "пожалуйста"), ("vsem", "всем"),
+        ("ostorozhno ostorozhna astarozhna", "осторожно"), ("opasen", "опасен"), ("opasno opasna", "опасно"),
+        ("nochyu noch'yu nochiu", "ночью"), ("lesu", "лесу"),
         ("nu", "ну"), ("i", "и"), ("v", "в"), ("s", "с"), ("k", "к"), ("u", "у"), ("o", "о"), ("a", "а"),
     });
 

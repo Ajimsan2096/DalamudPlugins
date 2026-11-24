@@ -19,7 +19,8 @@ public static partial class LanguageDetector
                      "what who where when why how there here just so if then than too very all any some get got go going im i'm " +
                      "you're it's don't dont can't cant thanks thank please sorry want need know think let lets let's up out " +
                      "only after before again also really still never always every much many more other into because which while " +
-                     "been being them him her his its our us mine anyone someone something nothing everyone"),
+                     "been being them him her his its our us mine anyone someone something nothing everyone " +
+                     "against over under through around across behind toward towards"),
         ["FR"] = Set("le la les un une des et ou mais est sont était être suis es sommes êtes je tu il elle on nous vous ils elles " +
                      "me te se mon ma mes ton ta tes son sa ses notre votre leur ce cet cette ces de du au aux en dans sur pour avec " +
                      "par pas ne non oui qui que quoi où quand pourquoi comment très tout tous bien merci salut bonjour bonsoir " +
@@ -132,7 +133,7 @@ public static partial class LanguageDetector
     [GeneratedRegex(@"^(?:dell|nell|all|dall|sull|quell|sull|un|po)'|^c'è", RegexOptions.CultureInvariant)]
     private static partial Regex ItalianElision();
 
-    [GeneratedRegex(@"zh|kh|shch|^vs[a-z]|^vz|^zd|(?:ogo|ego|tsya|sya|yy|iy|aya|uyu|yat|aesh|eesh|iesh|uesh|yaesh|tsa|ayu|yayu|aet|ayet|aem|ayut|yaet)$",
+    [GeneratedRegex(@"zh|kh|shch|^vs[a-z]|^vz|^zd|[a-z]'y[aeou]|(?:ogo|ego|tsya|sya|yy|iy|aya|uyu|yat|aesh|eesh|iesh|uesh|yaesh|tsa|ayu|yayu|aet|ayet|aem|ayut|yaet)$",
                     RegexOptions.CultureInvariant)]
     private static partial Regex TranslitShapeRegex();
 
@@ -193,7 +194,9 @@ public static partial class LanguageDetector
     /// <summary>Guesses which of <paramref name="candidates"/> the text is written in, or null when unsure.</summary>
     /// <param name="minScore">Evidence needed for a verdict: 2 for short chunks of a longer message, so a single
     /// shared word ("te", "si", "so") cannot switch the language of one sentence.</param>
-    public static string? Detect(string text, IReadOnlyCollection<string> candidates, double minScore = 1)
+    /// <param name="onlyCandidates">Score the candidates alone (a second look at a short chunk between the user's two
+    /// languages): "e" / "o" then count for Portuguese against English instead of being shared with Italian.</param>
+    public static string? Detect(string text, IReadOnlyCollection<string> candidates, double minScore = 1, bool onlyCandidates = false)
     {
         if (string.IsNullOrWhiteSpace(text))
             return null;
@@ -220,7 +223,8 @@ public static partial class LanguageDetector
         // weigh little, "esta" or "nicht" a full point.
         var weights = words.Select(w =>
         {
-            var langs = StopWords.Where(kv => Votes(kv.Key, w, kv.Value)).Select(kv => kv.Key).ToList();
+            var langs = StopWords.Where(kv => (!onlyCandidates || candidates.Contains(kv.Key)) && Votes(kv.Key, w, kv.Value))
+                                 .Select(kv => kv.Key).ToList();
             // MMO shorthand that is also Russian translit ("ty") is only half a point: "... junto al fuego ty" is not Russian.
             return (Langs: langs, Weight: langs.Count == 0 ? 0 : (IsNeutralWord(w) ? 0.5 : 1.0) / langs.Count);
         }).ToList();
@@ -230,6 +234,8 @@ public static partial class LanguageDetector
         // mistaken for French just because Spanish is not part of the configured pair.
         foreach (var (lang, _) in StopWords)
         {
+            if (onlyCandidates && !candidates.Contains(lang))
+                continue;
             var score = weights.Where(x => x.Langs.Contains(lang)).Sum(x => x.Weight);
             // Elided forms (j'ai, c'est, qu'il...) are a strong French signal; l' is shared with Italian (l'evento),
             // which has its own (dell', nell', all', un', c'è) and stressed final vowels (città, più, però).
