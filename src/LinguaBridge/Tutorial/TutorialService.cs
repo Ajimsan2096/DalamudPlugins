@@ -5,6 +5,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
+using LinguaBridge.Windows;
 
 namespace LinguaBridge.Tutorial;
 
@@ -15,10 +16,10 @@ namespace LinguaBridge.Tutorial;
 /// </summary>
 public sealed class TutorialService
 {
-    private static readonly Vector4 Accent = new(0.40f, 0.78f, 1f, 1f);
-    private static readonly Vector4 Good = new(0.45f, 0.95f, 0.55f, 1f);
-    private const float BubbleWidth = 360;
-    private const float Gap = 14;
+    private static Vector4 Accent => Ui.Accent;
+    private static Vector4 Good => Ui.Success;
+    private static float BubbleWidth => Ui.S(360);
+    private static float Gap => Ui.S(14);
 
     private readonly Plugin plugin;
     private readonly Dictionary<string, AnchorRect> anchors = new();
@@ -31,7 +32,7 @@ public sealed class TutorialService
     private bool focusBubble;
     private string? requestedTab;
     private Tip? tip;
-    private Vector2 bubbleSize = new(BubbleWidth, 160);
+    private Vector2 bubbleSize = new(360, 160);
 
     private readonly record struct AnchorRect(Vector2 Min, Vector2 Max, int Frame);
 
@@ -211,9 +212,9 @@ public sealed class TutorialService
         if (!Begin($"{tour.Name} tour###LBTourBubble", target))
             return;
 
-        ImGui.TextDisabled($"Guided tour: {tour.Name}   {step + 1} / {tour.Steps.Count}");
+        Ui.MutedText($"Guided tour: {tour.Name}   {step + 1} / {tour.Steps.Count}");
         using (ImRaii.PushColor(ImGuiCol.PlotHistogram, Accent))
-            ImGui.ProgressBar((step + 1f) / tour.Steps.Count, new Vector2(-1, 4), string.Empty);
+            ImGui.ProgressBar((step + 1f) / tour.Steps.Count, new Vector2(-1, Ui.S(4)), string.Empty);
         ImGui.Spacing();
         ImGui.TextColored(Accent, s.Title);
         ImGui.Spacing();
@@ -225,13 +226,13 @@ public sealed class TutorialService
             if (s.Done?.Invoke(plugin) == true)
                 ImGui.TextColored(Good, "Done! Press Next.");
             else
-                ImGui.TextColored(new Vector4(1f, 0.85f, 0.45f, 1f), "Try it: " + s.TryIt);
+                ImGui.TextColored(Ui.Incoming, "Try it: " + s.TryIt);
         }
 
         if (!windowOpen)
         {
             ImGui.Spacing();
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.4f, 1f), "The window for this step was closed.");
+            ImGui.TextColored(Ui.Warning, "The window for this step was closed.");
             ImGui.SameLine();
             if (ImGui.SmallButton("Open it again"))
                 plugin.OpenWindow(s.Window);
@@ -298,7 +299,7 @@ public sealed class TutorialService
         if (!Begin("Tip###LBTip", target))
             return;
 
-        ImGui.TextDisabled("LinguaBridge tip");
+        Ui.MutedText("LinguaBridge tip");
         ImGui.TextColored(Accent, t.Title);
         ImGui.Spacing();
         ImGui.TextWrapped(t.Body);
@@ -353,9 +354,9 @@ public sealed class TutorialService
             focusBubble = false;
         }
 
-        using var style = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, 8f)
-                                .Push(ImGuiStyleVar.WindowBorderSize, 2f)
-                                .Push(ImGuiStyleVar.WindowPadding, new Vector2(14, 12));
+        using var style = ImRaii.PushStyle(ImGuiStyleVar.WindowRounding, Ui.S(8))
+                                .Push(ImGuiStyleVar.WindowBorderSize, Math.Max(1f, Ui.S(2)))
+                                .Push(ImGuiStyleVar.WindowPadding, Ui.S(14, 12));
         using var color = ImRaii.PushColor(ImGuiCol.Border, Accent);
         const ImGuiWindowFlags flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoMove |
                                        ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings |
@@ -366,7 +367,7 @@ public sealed class TutorialService
             ImGui.End();
             return false;
         }
-        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + BubbleWidth - 28);
+        ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + BubbleWidth - Ui.S(28));
         return true;
     }
 
@@ -417,8 +418,8 @@ public sealed class TutorialService
     {
         var dl = ImGui.GetForegroundDrawList();
         var pulse = 0.55f + 0.45f * MathF.Sin((float)ImGui.GetTime() * 4f);
-        var pad = new Vector2(4, 4);
-        dl.AddRectFilled(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = 0.10f }), 5f);
-        dl.AddRect(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = pulse }), 5f, ImDrawFlags.None, 3f);
+        var pad = Ui.S(4, 4);
+        dl.AddRectFilled(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = 0.10f }), Ui.S(5));
+        dl.AddRect(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = pulse }), Ui.S(5), ImDrawFlags.None, Ui.S(3));
     }
 }

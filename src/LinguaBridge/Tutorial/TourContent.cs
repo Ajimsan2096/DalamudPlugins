@@ -49,7 +49,7 @@ public static class TourContent
             "or from Settings > Help.",
             TourWindow.Main, "main.window"),
         new("Translate chat on / off",
-            "When this is ticked, messages in the chats you selected are translated automatically and a translated " +
+            "When this switch is on (\"Translating\"), messages in the chats you selected are translated automatically and a translated " +
             "line appears in your chat log, with a tag like [EN>FR]. Only you see it.\n\n" +
             "The \"LB\" entry at the top right of the screen does the same (left click), and right click opens this window.",
             TourWindow.Main, "main.toggle"),
@@ -58,19 +58,20 @@ public static class TourContent
             "into several chat lines and DeepL / AI get roleplay context.\n\n/lb rp toggles it from the chat.",
             TourWindow.Main, "main.rp"),
         new("Your language pair",
-            "The two languages you translate between, and the engine in use. Change them in Settings > Languages " +
+            "The two languages you translate between, and the engine in use (hover it for details). Change them in Settings > Languages " +
             "and Settings > Engine.",
             TourWindow.Main, "main.pair"),
         new("Translation history",
             "Every translation lands here, newest on top:\n" +
-            "- yellow = received, blue = sent by you\n" +
-            "- the grey line is the original text\n" +
-            "- \"Copy\" copies the translation\n" +
-            "- \"Reply\" answers that person translated, in the same channel (party, tell, FC...)",
+            "- amber edge and down arrow = received, blue edge and up arrow = sent by you\n" +
+            "- the dimmer line is the original text\n" +
+            "- the copy icon copies the translation\n" +
+            "- the reply icon answers that person translated, in the same channel (party, tell, FC...)\n" +
+            "- the broom at the top clears the history (it asks first)",
             TourWindow.Main, "main.history"),
         new("Send or just translate",
             "\"Send to chat\": what you type is translated and sent to the game chat.\n\n" +
-            "\"Translate only (copy)\": nothing is sent, the translation is copied so you can paste it anywhere " +
+            "\"Translate only\": nothing is sent, the translation is copied so you can paste it anywhere " +
             "(Aetherphone's ChocoChat or Velvet, Discord, a website...).",
             TourWindow.Main, "main.mode"),
         new("Type your message",
@@ -103,7 +104,7 @@ public static class TourContent
             "\"Translate description\"."),
         new("Settings",
             "Everything else (engine and DeepL keys, channels, how translations are shown, roleplay, AI, glossary) " +
-            "is in Settings.\n\nThat's it for this window! Do you want a quick look at the settings too?",
+            "is in Settings (the cog icon). The question-mark icon next to it restarts this tour.\n\nThat's it for this window! Do you want a quick look at the settings too?",
             TourWindow.Main, "main.settings"),
     });
 
@@ -154,7 +155,7 @@ public static class TourContent
 
     public static readonly Tip FirstTranslation = new("first.translation", "Your first translation!",
         "The line with the [xx>yy] tag in your chat is the translation of the message above it. Only you see it.\n\n" +
-        "To answer translated, type /tr followed by your message, or press \"Reply\" on that message in /lb.");
+        "To answer translated, type /tr followed by your message, or press the reply icon on that message in /lb.");
 
     public static readonly Tip FirstSend = new("first.send", "Sent translated",
         "Your message went out translated. Your original text is shown in Echo (only to you) so you remember what " +
@@ -162,7 +163,7 @@ public static class TourContent
 
     public static readonly Tip FirstReply = new("first.reply", "Replying",
         "Your next message goes to the same channel (and person, for tells) as the message you clicked. " +
-        "\"Cancel reply\" goes back to the channel list.",
+        "The X next to \"Replying to...\" goes back to the channel list.",
         TourWindow.Main, "main.input");
 
     public static readonly Tip FirstRoleplay = new("first.roleplay", "Roleplay mode is on",
