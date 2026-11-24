@@ -13,6 +13,14 @@ public sealed class Configuration : IPluginConfiguration
     public int Version { get; set; } = 1;
     public bool ShowedWizard { get; set; } = false;
 
+    // --- Interface language ---
+    /// <summary>Language of the plugin's own menus and messages ("en", "ja", "de", "fr"). Empty = not chosen yet
+    /// (follows Dalamud's language).</summary>
+    public string UiLanguage { get; set; } = string.Empty;
+    /// <summary>The interface language was picked or confirmed (in the wizard, or in the one-time prompt shown to
+    /// existing installs after the update that added translations).</summary>
+    public bool UiLanguageChosen { get; set; } = false;
+
     // --- Tutorial ---
     /// <summary>Show one-time contextual tips and offer the guided tours.</summary>
     public bool TipsEnabled { get; set; } = true;

@@ -20,7 +20,9 @@ using FFXIVClientStructs.FFXIV.Client.UI;
 using LinguaBridge.Chat;
 using LinguaBridge.Translation;
 using LinguaBridge.Tutorial;
+using LinguaBridge.Localization;
 using LinguaBridge.Windows;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge;
 
@@ -57,6 +59,7 @@ public sealed partial class Plugin : IDalamudPlugin
     private readonly MainWindow mainWindow;
     private readonly ConfigWindow configWindow;
     private readonly SetupWizard setupWizard;
+    private readonly LanguagePrompt languagePrompt;
     private IDtrBarEntry? dtrEntry;
 
     private readonly ConcurrentQueue<HistoryEntry> history = new();
@@ -92,6 +95,7 @@ public sealed partial class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        Loc.SetLanguage(string.IsNullOrEmpty(Configuration.UiLanguage) ? Loc.Detect(PluginInterface.UiLanguage) : Configuration.UiLanguage);
         Translator = new TranslationService(() => Configuration);
         if (Configuration.Migrate())
             PluginInterface.SavePluginConfig(Configuration);
@@ -104,20 +108,22 @@ public sealed partial class Plugin : IDalamudPlugin
         mainWindow = new MainWindow(this);
         configWindow = new ConfigWindow(this);
         setupWizard = new SetupWizard(this);
+        languagePrompt = new LanguagePrompt(this);
         windowSystem.AddWindow(mainWindow);
         windowSystem.AddWindow(configWindow);
         windowSystem.AddWindow(setupWizard);
+        windowSystem.AddWindow(languagePrompt);
 
         var mainHelp = new CommandInfo(OnMainCommand)
         {
-            HelpMessage = "Open the LinguaBridge window. Add: config | wizard | tour [settings] | tips on|off|reset | on | off | toggle | rp (roleplay mode).",
+            HelpMessage = L("Open the LinguaBridge window. Add: config | wizard | tour [settings] | tips on|off|reset | on | off | toggle | rp (roleplay mode)."),
         };
         CommandManager.AddHandler(MainCommand, mainHelp);
-        CommandManager.AddHandler(ShortCommand, new CommandInfo(OnMainCommand) { HelpMessage = "Short for /linguabridge.", ShowInHelp = false });
+        CommandManager.AddHandler(ShortCommand, new CommandInfo(OnMainCommand) { HelpMessage = L("Short for /linguabridge."), ShowInHelp = false });
         CommandManager.AddHandler(TranslateCommand, new CommandInfo(OnTranslateCommand)
         {
-            HelpMessage = "Translate and send: /tr [:fr|:en|...] [/p|/fc|/t Name@World|...] message. " +
-                          "Without a channel it goes to your current chat channel.",
+            HelpMessage = L("Translate and send: /tr [:fr|:en|...] [/p|/fc|/t Name@World|...] message. " +
+                            "Without a channel it goes to your current chat channel."),
         });
 
         PluginInterface.UiBuilder.Draw += windowSystem.Draw;
@@ -131,6 +137,8 @@ public sealed partial class Plugin : IDalamudPlugin
         UpdateDtr();
         if (!Configuration.ShowedWizard)
             setupWizard.IsOpen = true;
+        else if (!Configuration.UiLanguageChosen)
+            languagePrompt.IsOpen = true; // existing install updated to a version with translations: ask once
     }
 
     public void Dispose()
@@ -163,6 +171,15 @@ public sealed partial class Plugin : IDalamudPlugin
     public void ToggleMainUi() => mainWindow.Toggle();
     public void ToggleConfigUi() => configWindow.Toggle();
     public void OpenWizard() => setupWizard.IsOpen = true;
+
+    /// <summary>Switches the plugin's interface language right away and remembers it.</summary>
+    public void SetUiLanguage(string code)
+    {
+        Configuration.UiLanguage = code;
+        Configuration.UiLanguageChosen = true;
+        Loc.SetLanguage(code);
+        SaveConfig();
+    }
 
     // ---------------------------------------------------------------- tutorial hooks
 
@@ -202,8 +219,8 @@ public sealed partial class Plugin : IDalamudPlugin
         SaveConfig();
         if (announce)
             ChatGui.Print(enabled
-                ? "Roleplay mode ON: emotes, *actions*, \"speech\" and ((OOC)) are handled for RP."
-                : "Roleplay mode OFF.", Tag);
+                ? L("Roleplay mode ON: emotes, *actions*, \"speech\" and ((OOC)) are handled for RP.")
+                : L("Roleplay mode OFF."), Tag);
         if (enabled)
             Tutorial.ShowTip(TourContent.FirstRoleplay);
     }
@@ -213,7 +230,7 @@ public sealed partial class Plugin : IDalamudPlugin
         Configuration.IncomingEnabled = enabled;
         SaveConfig();
         if (announce)
-            ChatGui.Print(enabled ? "Chat translation ON." : "Chat translation OFF.", Tag);
+            ChatGui.Print(enabled ? L("Chat translation ON.") : L("Chat translation OFF."), Tag);
     }
 
     // ---------------------------------------------------------------- server info bar
@@ -235,8 +252,9 @@ public sealed partial class Plugin : IDalamudPlugin
                         .AddUiForegroundOff()
                         .Build();
         dtrEntry.Tooltip = new SeString(new TextPayload(
-            $"LinguaBridge: chat translation {(on ? "ON" : "OFF")} ({Configuration.Engine})\n" +
-            "Left click: toggle   Right click: open window"));
+            (on ? LF("LinguaBridge: chat translation ON ({0})", Configuration.Engine)
+                : LF("LinguaBridge: chat translation OFF ({0})", Configuration.Engine)) + "\n" +
+            L("Left click: toggle   Right click: open window")));
         dtrEntry.OnClick = e =>
         {
             if (e.ClickType == MouseClickType.Right)
@@ -275,15 +293,15 @@ public sealed partial class Plugin : IDalamudPlugin
                 break;
             case "tips on":
                 Tutorial.SetTipsEnabled(true);
-                ChatGui.Print("Tips ON.", Tag);
+                ChatGui.Print(L("Tips ON."), Tag);
                 break;
             case "tips off":
                 Tutorial.SetTipsEnabled(false);
-                ChatGui.Print("Tips OFF.", Tag);
+                ChatGui.Print(L("Tips OFF."), Tag);
                 break;
             case "tips reset":
                 Tutorial.ResetTips();
-                ChatGui.Print("All tips and tour offers will be shown again.", Tag);
+                ChatGui.Print(L("All tips and tour offers will be shown again."), Tag);
                 break;
             case "on":
                 SetIncomingEnabled(true, announce: true);
@@ -314,7 +332,7 @@ public sealed partial class Plugin : IDalamudPlugin
         var parsed = OutgoingCommand.Parse(args, out var error);
         if (parsed == null)
         {
-            ChatGui.PrintError(error ?? "Could not parse the command.", Tag);
+            ChatGui.PrintError(error ?? L("Could not parse the command."), Tag);
             return;
         }
 
@@ -764,7 +782,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 target = Languages.TryGet(args[1..].Trim().ToUpperInvariant());
                 if (target == null)
                 {
-                    ChatGui.PrintError($"Unknown language \"{args[1..].Trim()}\". Example: /lb clip :fr", Tag);
+                    ChatGui.PrintError(LF("Unknown language \"{0}\". Example: /lb clip :fr", args[1..].Trim()), Tag);
                     return;
                 }
             }
@@ -772,7 +790,7 @@ public sealed partial class Plugin : IDalamudPlugin
             var text = Clipboard.GetText()?.Trim();
             if (string.IsNullOrEmpty(text))
             {
-                ChatGui.PrintError("The clipboard has no text. Copy a message first (Ctrl+C), then /lb clip.", Tag);
+                ChatGui.PrintError(L("The clipboard has no text. Copy a message first (Ctrl+C), then /lb clip."), Tag);
                 return;
             }
             if (text.Length > 3000)
@@ -781,7 +799,7 @@ public sealed partial class Plugin : IDalamudPlugin
             var result = await TranslateTextAsync(text, target).ConfigureAwait(false);
             if (result == null)
             {
-                await Framework.RunOnFrameworkThread(() => ChatGui.Print("Nothing to translate: the text is already in that language.", Tag))
+                await Framework.RunOnFrameworkThread(() => ChatGui.Print(L("Nothing to translate: the text is already in that language."), Tag))
                                .ConfigureAwait(false);
                 return;
             }
@@ -794,7 +812,7 @@ public sealed partial class Plugin : IDalamudPlugin
                 Message = new SeStringBuilder()
                           .AddUiForeground($"[{result.Source.Code}>{result.Target.Code}] ", Configuration.TagColor)
                           .AddText(ChatSender.FoldForGame(result.Text))
-                          .AddUiForeground(" (copied)", 4)
+                          .AddUiForeground(" (" + L("copied") + ")", 4)
                           .Build(),
             })).ConfigureAwait(false);
         }
@@ -812,7 +830,7 @@ public sealed partial class Plugin : IDalamudPlugin
             return;
         args.AddMenuItem(new MenuItem
         {
-            Name = "Translate description",
+            Name = L("Translate description"),
             UseDefaultPrefix = true,
             OnClicked = TranslatePartyFinder,
         });
@@ -829,7 +847,7 @@ public sealed partial class Plugin : IDalamudPlugin
             description = StripGlyphs(description).Trim();
             if (description.Length == 0)
             {
-                ChatGui.Print("This listing has no description.", Tag);
+                ChatGui.Print(L("This listing has no description."), Tag);
                 return;
             }
             _ = TranslatePartyFinderAsync(description);
@@ -849,7 +867,7 @@ public sealed partial class Plugin : IDalamudPlugin
             if (result == null)
             {
                 await Framework.RunOnFrameworkThread(() =>
-                    ChatGui.Print($"The description is already in {preferred.Name}.", Tag));
+                    ChatGui.Print(LF("The description is already in {0}.", L(preferred.Name)), Tag));
                 return;
             }
 
@@ -879,7 +897,7 @@ public sealed partial class Plugin : IDalamudPlugin
             return;
         lastFallbackPrinted = DateTime.Now;
         _ = Framework.RunOnFrameworkThread(() =>
-            ChatGui.PrintError($"{reason}. Using the backup engine for now.", Tag));
+            ChatGui.PrintError(LF("{0}. Using the backup engine for now.", reason), Tag));
     }
 
     private readonly Dictionary<string, DateTime> llmNoticeTimes = new();
@@ -892,21 +910,22 @@ public sealed partial class Plugin : IDalamudPlugin
                 return;
             llmNoticeTimes[provider] = DateTime.Now;
         }
-        _ = Framework.RunOnFrameworkThread(() => ChatGui.Print($"AI {provider}: {reason}, trying the next one.", Tag));
+        _ = Framework.RunOnFrameworkThread(() => ChatGui.Print(LF("AI {0}: {1}, trying the next one.", provider, reason), Tag));
     }
 
     private void OnGlossarySaved() => _ = Framework.RunOnFrameworkThread(() => PluginInterface.SavePluginConfig(Configuration));
 
     private void OnDeepLKeyUnavailable(int index, string reason)
     {
-        var next = index + 2 <= Translator.DeepL.Keys.Count ? $"trying key #{index + 2}" : "trying the remaining keys";
-        _ = Framework.RunOnFrameworkThread(() =>
-            ChatGui.Print($"DeepL key #{index + 1}: {reason}, {next}.", Tag));
+        var msg = index + 2 <= Translator.DeepL.Keys.Count
+            ? LF("DeepL key #{0}: {1}, trying key #{2}.", index + 1, reason, index + 2)
+            : LF("DeepL key #{0}: {1}, trying the remaining keys.", index + 1, reason);
+        _ = Framework.RunOnFrameworkThread(() => ChatGui.Print(msg, Tag));
     }
 
     private void ReportError(Exception ex, bool force)
     {
-        var msg = ex is TranslationException or ArgumentException ? ex.Message : $"Unexpected error: {ex.Message}";
+        var msg = ex is TranslationException or ArgumentException ? ex.Message : LF("Unexpected error: {0}", ex.Message);
         if (ex is not TranslationException and not ArgumentException)
             Log.Error(ex, "LinguaBridge error");
         else

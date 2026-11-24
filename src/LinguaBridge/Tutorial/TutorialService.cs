@@ -6,6 +6,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility.Raii;
 using LinguaBridge.Windows;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge.Tutorial;
 
@@ -212,29 +213,29 @@ public sealed class TutorialService
         if (!Begin($"{tour.Name} tour###LBTourBubble", target))
             return;
 
-        Ui.MutedText($"Guided tour: {tour.Name}   {step + 1} / {tour.Steps.Count}");
+        Ui.MutedText(LF("Guided tour: {0}   {1} / {2}", L(tour.Name), step + 1, tour.Steps.Count));
         using (ImRaii.PushColor(ImGuiCol.PlotHistogram, Accent))
             ImGui.ProgressBar((step + 1f) / tour.Steps.Count, new Vector2(-1, Ui.S(4)), string.Empty);
         ImGui.Spacing();
-        ImGui.TextColored(Accent, s.Title);
+        ImGui.TextColored(Accent, L(s.Title));
         ImGui.Spacing();
-        ImGui.TextWrapped(s.Body);
+        ImGui.TextWrapped(L(s.Body));
 
         if (s.TryIt != null)
         {
             ImGui.Spacing();
             if (s.Done?.Invoke(plugin) == true)
-                ImGui.TextColored(Good, "Done! Press Next.");
+                ImGui.TextColored(Good, L("Done! Press Next."));
             else
-                ImGui.TextColored(Ui.Incoming, "Try it: " + s.TryIt);
+                ImGui.TextColored(Ui.Incoming, L("Try it: ") + L(s.TryIt));
         }
 
         if (!windowOpen)
         {
             ImGui.Spacing();
-            ImGui.TextColored(Ui.Warning, "The window for this step was closed.");
+            ImGui.TextColored(Ui.Warning, L("The window for this step was closed."));
             ImGui.SameLine();
-            if (ImGui.SmallButton("Open it again"))
+            if (ImGui.SmallButton(L("Open it again")))
                 plugin.OpenWindow(s.Window);
         }
 
@@ -243,7 +244,7 @@ public sealed class TutorialService
         var last = step == tour.Steps.Count - 1;
         using (ImRaii.Disabled(step == 0))
         {
-            if (ImGui.Button("< Back"))
+            if (ImGui.Button(L("< Back")))
                 GoTo(step - 1);
         }
         ImGui.SameLine();
@@ -251,7 +252,7 @@ public sealed class TutorialService
         {
             using (ImRaii.PushColor(ImGuiCol.Button, Accent with { W = 0.55f }))
             {
-                if (ImGui.Button("Next >"))
+                if (ImGui.Button(L("Next >")))
                     GoTo(step + 1);
             }
         }
@@ -259,33 +260,33 @@ public sealed class TutorialService
         {
             using (ImRaii.PushColor(ImGuiCol.Button, Accent with { W = 0.55f }))
             {
-                if (ImGui.Button("Show me the settings"))
+                if (ImGui.Button(L("Show me the settings")))
                 {
                     EndTour();
                     StartTour(TourContent.SettingsTourId);
                 }
             }
             ImGui.SameLine();
-            if (ImGui.Button("Finish"))
+            if (ImGui.Button(L("Finish")))
                 EndTour();
         }
         else
         {
             using (ImRaii.PushColor(ImGuiCol.Button, Accent with { W = 0.55f }))
             {
-                if (ImGui.Button("Finish"))
+                if (ImGui.Button(L("Finish")))
                     EndTour();
             }
         }
 
         if (!last)
         {
-            const string skip = "Skip tour";
+            var skip = L("Skip tour");
             ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - ImGui.CalcTextSize(skip).X - ImGui.GetStyle().FramePadding.X * 2);
             if (ImGui.Button(skip))
                 EndTour();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Close the tour. Restart it any time with /lb tour or Settings > Help.");
+                ImGui.SetTooltip(L("Close the tour. Restart it any time with /lb tour or Settings > Help."));
         }
         End();
     }
@@ -299,10 +300,10 @@ public sealed class TutorialService
         if (!Begin("Tip###LBTip", target))
             return;
 
-        Ui.MutedText("LinguaBridge tip");
-        ImGui.TextColored(Accent, t.Title);
+        Ui.MutedText(L("LinguaBridge tip"));
+        ImGui.TextColored(Accent, L(t.Title));
         ImGui.Spacing();
-        ImGui.TextWrapped(t.Body);
+        ImGui.TextWrapped(L(t.Body));
         ImGui.Spacing();
         ImGui.Separator();
 
@@ -310,7 +311,7 @@ public sealed class TutorialService
         {
             using (ImRaii.PushColor(ImGuiCol.Button, Accent with { W = 0.55f }))
             {
-                if (ImGui.Button("Start the tour"))
+                if (ImGui.Button(L("Start the tour")))
                 {
                     var id = t.OfferTour;
                     DismissTip();
@@ -318,27 +319,27 @@ public sealed class TutorialService
                 }
             }
             ImGui.SameLine();
-            if (ImGui.Button("Not now"))
+            if (ImGui.Button(L("Not now")))
                 DismissTip();
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("You can start it later with /lb tour or Settings > Help.");
+                ImGui.SetTooltip(L("You can start it later with /lb tour or Settings > Help."));
         }
         else
         {
             using (ImRaii.PushColor(ImGuiCol.Button, Accent with { W = 0.55f }))
             {
-                if (ImGui.Button("Got it"))
+                if (ImGui.Button(L("Got it")))
                     DismissTip();
             }
         }
 
-        const string off = "Turn off tips";
+        var off = L("Turn off tips");
         ImGui.SameLine(ImGui.GetWindowContentRegionMax().X - ImGui.CalcTextSize(off).X - ImGui.GetStyle().FramePadding.X * 2);
         if (ImGui.Button(off))
         {
             DismissTip();
             SetTipsEnabled(false);
-            Plugin.ChatGui.Print("Tips turned off. Turn them back on in Settings > Help (or /lb tips on).", "LinguaBridge");
+            Plugin.ChatGui.Print(L("Tips turned off. Turn them back on in Settings > Help (or /lb tips on)."), "LinguaBridge");
         }
         End();
     }

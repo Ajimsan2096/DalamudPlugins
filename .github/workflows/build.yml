@@ -32,6 +32,9 @@ jobs:
           unzip -q dalamud.zip -d "$DALAMUD_HOME"
           rm dalamud.zip
 
+      - name: Check interface translations
+        run: python3 scripts/check_localization.py
+
       - name: Build
         run: |
           for proj in src/*/*.csproj; do

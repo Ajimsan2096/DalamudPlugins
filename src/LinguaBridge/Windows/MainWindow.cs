@@ -9,6 +9,7 @@ using Dalamud.Interface.Windowing;
 using LinguaBridge.Chat;
 using LinguaBridge.Translation;
 using LinguaBridge.Tutorial;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge.Windows;
 
@@ -86,11 +87,11 @@ public sealed class MainWindow : Window
                 plugin.SetIncomingEnabled(enabled, announce: false);
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(enabled ? Ui.Success : Ui.Muted, enabled ? "Translating" : "Paused");
+            ImGui.TextColored(enabled ? Ui.Success : Ui.Muted, enabled ? L("Translating") : L("Paused"));
             if (ImGui.IsItemClicked())
                 plugin.SetIncomingEnabled(!enabled, announce: false);
         }
-        Ui.Tooltip("Translate incoming chat automatically (also: the \"LB\" entry in the server info bar, /lb on|off).");
+        Ui.Tooltip(L("Translate incoming chat automatically (also: the \"LB\" entry in the server info bar, /lb on|off)."));
         plugin.Tutorial.Anchor("main.toggle");
 
         ImGui.SameLine(0, Ui.S(16));
@@ -101,19 +102,19 @@ public sealed class MainWindow : Window
                 plugin.SetRoleplayMode(rp, announce: false);
             ImGui.SameLine();
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(rp ? Ui.Accent : Ui.Muted, "Roleplay");
+            ImGui.TextColored(rp ? Ui.Accent : Ui.Muted, L("Roleplay"));
             if (ImGui.IsItemClicked())
                 plugin.SetRoleplayMode(!rp, announce: false);
         }
-        Ui.Tooltip("Roleplay mode: emotes, *actions*, \"speech\", ((OOC)), long posts. Settings > Roleplay.");
+        Ui.Tooltip(L("Roleplay mode: emotes, *actions*, \"speech\", ((OOC)), long posts. Settings > Roleplay."));
         plugin.Tutorial.Anchor("main.rp");
 
         ImGui.SameLine(0, Ui.S(16));
         var pad = (ImGui.GetFrameHeight() - ImGui.GetTextLineHeight() - Ui.S(2)) / 2;
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pad);
         Ui.Badge($"{cfg.LanguageA}  <>  {cfg.LanguageB}   ·   {cfg.Engine}", Ui.Accent,
-                 $"Translating between {Languages.Get(cfg.LanguageA).Name} and {Languages.Get(cfg.LanguageB).Name} " +
-                 $"with {cfg.Engine}.\nChange it in Settings > Languages / Engine.");
+                 LF("Translating between {0} and {1} with {2}.\nChange it in Settings > Languages / Engine.",
+                    L(Languages.Get(cfg.LanguageA).Name), L(Languages.Get(cfg.LanguageB).Name), cfg.Engine));
         plugin.Tutorial.Anchor("main.pair");
 
         var spacing = ImGui.GetStyle().ItemSpacing.X;
@@ -123,15 +124,15 @@ public sealed class MainWindow : Window
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() - pad);
         using (ImRaii.Disabled(plugin.History.Count == 0))
         {
-            if (Ui.IconButton("clear", FontAwesomeIcon.Broom, "Clear the history"))
+            if (Ui.IconButton("clear", FontAwesomeIcon.Broom, L("Clear the history")))
                 ImGui.OpenPopup("##confirmclear");
         }
         DrawClearConfirm();
         ImGui.SameLine();
-        if (Ui.IconButton("tour", FontAwesomeIcon.QuestionCircle, "Guided tour of this window (/lb tour)"))
+        if (Ui.IconButton("tour", FontAwesomeIcon.QuestionCircle, L("Guided tour of this window (/lb tour)")))
             plugin.Tutorial.StartTour(TourContent.MainTourId);
         ImGui.SameLine();
-        if (Ui.IconButton("settings", FontAwesomeIcon.Cog, "Settings (/lb config)"))
+        if (Ui.IconButton("settings", FontAwesomeIcon.Cog, L("Settings (/lb config)")))
             plugin.ToggleConfigUi();
         plugin.Tutorial.Anchor("main.settings");
     }
@@ -142,16 +143,16 @@ public sealed class MainWindow : Window
         using var popup = ImRaii.Popup("##confirmclear");
         if (!popup)
             return;
-        ImGui.TextUnformatted($"Clear all {plugin.History.Count} translations from the history?");
-        ImGui.TextColored(Ui.Muted, "Your chat log is not affected.");
+        ImGui.TextUnformatted(LF("Clear all {0} translations from the history?", plugin.History.Count));
+        ImGui.TextColored(Ui.Muted, L("Your chat log is not affected."));
         ImGui.Spacing();
-        if (Ui.Button(FontAwesomeIcon.Broom, "Clear history", primary: true))
+        if (Ui.Button(FontAwesomeIcon.Broom, L("Clear history"), primary: true))
         {
             plugin.ClearHistory();
             ImGui.CloseCurrentPopup();
         }
         ImGui.SameLine();
-        if (ImGui.Button("Cancel") || ImGui.IsKeyPressed(ImGuiKey.Escape))
+        if (ImGui.Button(L("Cancel")) || ImGui.IsKeyPressed(ImGuiKey.Escape))
             ImGui.CloseCurrentPopup();
     }
 
@@ -201,9 +202,9 @@ public sealed class MainWindow : Window
         Centered(FontAwesomeIcon.Comments.ToIconString(), Ui.Muted);
         font.Dispose();
         ImGui.Spacing();
-        Centered("No translations yet", ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
-        Centered("Messages from the chats you selected will appear here.", Ui.Muted);
-        Centered("Press Reply on one to answer it translated, in the same channel.", Ui.Muted);
+        Centered(L("No translations yet"), ImGui.GetStyle().Colors[(int)ImGuiCol.Text]);
+        Centered(L("Messages from the chats you selected will appear here."), Ui.Muted);
+        Centered(L("Press Reply on one to answer it translated, in the same channel."), Ui.Muted);
     }
 
     private static void Centered(string text, Vector4 color)
@@ -231,14 +232,14 @@ public sealed class MainWindow : Window
 
             // Header: direction icon, sender, channel, language pair ... time and actions on the right.
             Ui.Icon(e.Outgoing ? FontAwesomeIcon.ArrowUp : FontAwesomeIcon.ArrowDown, edge);
-            Ui.Tooltip(e.Outgoing ? "Sent by you" : "Received");
+            Ui.Tooltip(e.Outgoing ? L("Sent by you") : L("Received"));
             ImGui.SameLine();
-            ImGui.TextColored(edge, e.Sender);
+            ImGui.TextColored(edge, L(e.Sender));
             ImGui.SameLine();
-            Ui.Badge(e.Channel, Ui.Muted);
+            Ui.Badge(L(e.Channel), Ui.Muted);
             ImGui.SameLine();
             Ui.Badge($"{e.Translation.Source.Code} > {e.Translation.Target.Code}", edge,
-                     $"{e.Translation.Source.Name} to {e.Translation.Target.Name} ({e.Translation.Engine})");
+                     LF("{0} to {1} ({2})", L(e.Translation.Source.Name), L(e.Translation.Target.Name), e.Translation.Engine));
 
             var time = $"{e.Time:HH:mm}";
             var spacing = ImGui.GetStyle().ItemSpacing.X;
@@ -255,18 +256,18 @@ public sealed class MainWindow : Window
                 ImGui.AlignTextToFramePadding();
                 ImGui.TextColored(Ui.Muted, time);
                 ImGui.SameLine();
-                if (Ui.GhostIconButton("copy", FontAwesomeIcon.Copy, "Copy the translation"))
+                if (Ui.GhostIconButton("copy", FontAwesomeIcon.Copy, L("Copy the translation")))
                 {
                     ImGui.SetClipboardText(e.Translation.Text);
-                    SetStatus("Translation copied to the clipboard.", StatusKind.Success);
+                    SetStatus(L("Translation copied to the clipboard."), StatusKind.Success);
                 }
                 if (e.ReplyPrefix != null)
                 {
                     ImGui.SameLine();
-                    if (Ui.GhostIconButton("reply", FontAwesomeIcon.Reply, $"Reply to {e.Sender} translated, in {e.Channel}"))
+                    if (Ui.GhostIconButton("reply", FontAwesomeIcon.Reply, LF("Reply to {0} translated, in {1}", e.Sender, L(e.Channel))))
                     {
                         replyPrefix = e.ReplyPrefix;
-                        replyLabel = $"{e.Sender} ({e.Channel})";
+                        replyLabel = $"{e.Sender} ({L(e.Channel)})";
                         focusInput = true;
                         plugin.Tutorial.ShowTip(TourContent.FirstReply);
                     }
@@ -283,13 +284,13 @@ public sealed class MainWindow : Window
                 if (ImGui.IsItemClicked())
                 {
                     ImGui.SetClipboardText(learning.Text);
-                    SetStatus("Learning line copied to the clipboard.", StatusKind.Success);
+                    SetStatus(L("Learning line copied to the clipboard."), StatusKind.Success);
                 }
-                Ui.Tooltip($"Learning language ({learning.Target.Name}). Click to copy.");
+                Ui.Tooltip(LF("Learning language ({0}). Click to copy.", L(learning.Target.Name)));
             }
             using (ImRaii.PushColor(ImGuiCol.Text, Ui.Muted))
                 ImGui.TextWrapped(e.Translation.Original);
-            Ui.Tooltip("Original message");
+            Ui.Tooltip(L("Original message"));
 
             ImGui.PopTextWrapPos();
         }
@@ -323,21 +324,21 @@ public sealed class MainWindow : Window
                 Ui.Icon(FontAwesomeIcon.Reply, Ui.Accent);
                 ImGui.SameLine();
                 ImGui.AlignTextToFramePadding();
-                ImGui.TextColored(Ui.Accent, $"Replying to {replyLabel}");
+                ImGui.TextColored(Ui.Accent, LF("Replying to {0}", replyLabel));
                 ImGui.SameLine();
-                if (Ui.GhostIconButton("cancelreply", FontAwesomeIcon.Times, "Cancel the reply (back to the channel list)", Ui.Danger))
+                if (Ui.GhostIconButton("cancelreply", FontAwesomeIcon.Times, L("Cancel the reply (back to the channel list)"), Ui.Danger))
                     replyPrefix = null;
             }
         }
         else
         {
             var mode = cfg.ComposeTranslateOnly ? 1 : 0;
-            if (Ui.Segmented("mode", new[] { "Send to chat", "Translate only" }, ref mode, new[]
+            if (Ui.Segmented("mode", new[] { L("Send to chat"), L("Translate only") }, ref mode, new[]
                 {
-                    "What you type is translated, then sent to the game chat.",
-                    "Nothing is sent: the translation is copied so you can paste it anywhere\n" +
+                    L("What you type is translated, then sent to the game chat."),
+                    L("Nothing is sent: the translation is copied so you can paste it anywhere\n" +
                     "(Aetherphone's ChocoChat or Velvet, Discord, a website...).\n" +
-                    "Also: /lb clip translates what you copied.",
+                    "Also: /lb clip translates what you copied."),
                 }))
             {
                 cfg.ComposeTranslateOnly = mode == 1;
@@ -348,7 +349,7 @@ public sealed class MainWindow : Window
             plugin.Tutorial.Anchor("main.mode");
             ImGui.SameLine(0, Ui.S(10));
             ImGui.AlignTextToFramePadding();
-            ImGui.TextColored(Ui.Muted, cfg.ComposeTranslateOnly ? "Enter: translate and copy" : "Enter: translate and send");
+            ImGui.TextColored(Ui.Muted, cfg.ComposeTranslateOnly ? L("Enter: translate and copy") : L("Enter: translate and send"));
         }
 
         if (focusInput)
@@ -366,13 +367,13 @@ public sealed class MainWindow : Window
             plugin.Tutorial.Anchor("main.input");
             var bytes = System.Text.Encoding.UTF8.GetByteCount(input);
             ImGui.TextColored(bytes > 500 ? Ui.Warning : Ui.Muted,
-                              bytes > 500 ? $"{bytes} bytes: longer than one chat line (500), it will be split"
-                                          : $"{bytes} / 500 bytes per chat line");
+                              bytes > 500 ? LF("{0} bytes: longer than one chat line (500), it will be split", bytes)
+                                          : LF("{0} / 500 bytes per chat line", bytes));
         }
         else
         {
             ImGui.SetNextItemWidth(-1);
-            submitted = ImGui.InputTextWithHint("##input", "Type your message in any language...", ref input, 400,
+            submitted = ImGui.InputTextWithHint("##input", L("Type your message in any language..."), ref input, 400,
                                                 ImGuiInputTextFlags.EnterReturnsTrue);
             plugin.Tutorial.Anchor("main.input");
         }
@@ -384,32 +385,32 @@ public sealed class MainWindow : Window
         }
 
         // Options on the left, actions on the right.
-        string[] targets = { "Auto (other language)", $"To {a.Name}", $"To {b.Name}" };
+        string[] targets = { L("Auto (other language)"), LF("To {0}", L(a.Name)), LF("To {0}", L(b.Name)) };
         var t = targetIndex + 1;
         Ui.Icon(FontAwesomeIcon.Language, Ui.Muted);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(Ui.S(165));
         if (ImGui.Combo("##target", ref t, targets, targets.Length))
             targetIndex = t - 1;
-        Ui.Tooltip("Language to translate into");
+        Ui.Tooltip(L("Language to translate into"));
         plugin.Tutorial.Anchor("main.target");
 
         var empty = string.IsNullOrWhiteSpace(input);
         var spacing = ImGui.GetStyle().ItemSpacing.X;
         if (translateOnly)
         {
-            var w = Ui.IconTextButtonWidth(FontAwesomeIcon.Paste, "Paste & translate") +
-                    Ui.IconTextButtonWidth(FontAwesomeIcon.Copy, "Translate & copy") + spacing;
+            var w = Ui.IconTextButtonWidth(FontAwesomeIcon.Paste, L("Paste & translate")) +
+                    Ui.IconTextButtonWidth(FontAwesomeIcon.Copy, L("Translate & copy")) + spacing;
             Ui.AlignRight(w);
             using (ImRaii.Disabled(busy))
             {
-                if (Ui.Button(FontAwesomeIcon.Paste, "Paste & translate",
-                              tooltip: "Translates what you copied (Ctrl+C) and copies the translation back."))
+                if (Ui.Button(FontAwesomeIcon.Paste, L("Paste & translate"),
+                              tooltip: L("Translates what you copied (Ctrl+C) and copies the translation back.")))
                 {
                     var clip = Clipboard.GetText();
                     if (string.IsNullOrWhiteSpace(clip))
                     {
-                        SetStatus("The clipboard has no text.", StatusKind.Warning);
+                        SetStatus(L("The clipboard has no text."), StatusKind.Warning);
                     }
                     else
                     {
@@ -421,8 +422,8 @@ public sealed class MainWindow : Window
             ImGui.SameLine();
             using (ImRaii.Disabled(busy || empty))
             {
-                if (Ui.Button(FontAwesomeIcon.Copy, "Translate & copy", primary: true,
-                              tooltip: empty ? "Type something first." : null))
+                if (Ui.Button(FontAwesomeIcon.Copy, L("Translate & copy"), primary: true,
+                              tooltip: empty ? L("Type something first.") : null))
                     _ = TranslateAndCopy();
             }
             plugin.Tutorial.Anchor("main.preview");
@@ -436,23 +437,24 @@ public sealed class MainWindow : Window
             Ui.Icon(FontAwesomeIcon.Comments, Ui.Muted);
             ImGui.SameLine();
             ImGui.SetNextItemWidth(Ui.S(160));
-            ImGui.Combo("##channel", ref channelIndex, ChannelLabels, ChannelLabels.Length);
+            var channelLabels = Array.ConvertAll(ChannelLabels, L);
+            ImGui.Combo("##channel", ref channelIndex, channelLabels, channelLabels.Length);
         }
-        Ui.Tooltip(replyPrefix != null ? "Replying: the message goes where the original came from." : "Chat channel to send to");
+        Ui.Tooltip(replyPrefix != null ? L("Replying: the message goes where the original came from.") : L("Chat channel to send to"));
         plugin.Tutorial.Anchor("main.channel");
 
-        var buttons = Ui.IconTextButtonWidth(FontAwesomeIcon.Eye, "Preview") +
-                      Ui.IconTextButtonWidth(FontAwesomeIcon.PaperPlane, "Send") + spacing;
+        var buttons = Ui.IconTextButtonWidth(FontAwesomeIcon.Eye, L("Preview")) +
+                      Ui.IconTextButtonWidth(FontAwesomeIcon.PaperPlane, L("Send")) + spacing;
         Ui.AlignRight(buttons);
         using (ImRaii.Disabled(busy || empty))
         {
-            if (Ui.Button(FontAwesomeIcon.Eye, "Preview",
-                          tooltip: "Translate without sending, and show a back-translation to check the meaning."))
+            if (Ui.Button(FontAwesomeIcon.Eye, L("Preview"),
+                          tooltip: L("Translate without sending, and show a back-translation to check the meaning.")))
                 _ = Preview();
             plugin.Tutorial.Anchor("main.preview");
             ImGui.SameLine();
-            if (Ui.Button(FontAwesomeIcon.PaperPlane, "Send", primary: true,
-                          tooltip: empty ? "Type something first." : "Translate and send (Enter)"))
+            if (Ui.Button(FontAwesomeIcon.PaperPlane, L("Send"), primary: true,
+                          tooltip: empty ? L("Type something first.") : L("Translate and send (Enter)")))
                 _ = TranslateAndSend();
         }
 
@@ -470,13 +472,13 @@ public sealed class MainWindow : Window
                 if (backTranslation.Length > 0)
                 {
                     using (ImRaii.PushColor(ImGuiCol.Text, Ui.Muted))
-                        ImGui.TextWrapped($"Means: {backTranslation}");
-                    Ui.Tooltip("Back-translation into your language, to check the meaning.");
+                        ImGui.TextWrapped(LF("Means: {0}", backTranslation));
+                    Ui.Tooltip(L("Back-translation into your language, to check the meaning."));
                 }
                 if (ImGui.SmallButton("Copy##preview"))
                 {
                     ImGui.SetClipboardText(preview);
-                    SetStatus("Translation copied to the clipboard.", StatusKind.Success);
+                    SetStatus(L("Translation copied to the clipboard."), StatusKind.Success);
                 }
                 ImGui.SameLine();
                 if (ImGui.SmallButton("Dismiss##preview"))
@@ -515,11 +517,11 @@ public sealed class MainWindow : Window
             if (r == null)
             {
                 preview = string.Empty;
-                SetStatus("Already in the target language: nothing to translate.", StatusKind.Info);
+                SetStatus(L("Already in the target language: nothing to translate."), StatusKind.Info);
                 return;
             }
             preview = ChatSender.Clean(r.Text);
-            SetStatus($"{r.Source.Name} > {r.Target.Name} ({r.Engine})", StatusKind.Info);
+            SetStatus($"{L(r.Source.Name)} > {L(r.Target.Name)} ({r.Engine})", StatusKind.Info);
             // Back-translate into the source language so the user can check the meaning.
             if (Languages.TryGet(r.Source.Code) is { } src)
             {
@@ -553,12 +555,12 @@ public sealed class MainWindow : Window
             if (r == null)
             {
                 preview = string.Empty;
-                SetStatus("Already in the target language: nothing to translate.", StatusKind.Info);
+                SetStatus(L("Already in the target language: nothing to translate."), StatusKind.Info);
                 return;
             }
             preview = r.Text;
             plugin.CopyToClipboard(r.Text);
-            SetStatus($"{r.Source.Name} > {r.Target.Name} ({r.Engine}), copied to the clipboard.", StatusKind.Success);
+            SetStatus(LF("{0} > {1} ({2}), copied to the clipboard.", L(r.Source.Name), L(r.Target.Name), r.Engine), StatusKind.Success);
         }
         catch (Exception ex)
         {
@@ -589,7 +591,7 @@ public sealed class MainWindow : Window
             }
             else
             {
-                SetStatus("Could not send. See the chat log for details.", StatusKind.Error);
+                SetStatus(L("Could not send. See the chat log for details."), StatusKind.Error);
             }
         }
         finally
