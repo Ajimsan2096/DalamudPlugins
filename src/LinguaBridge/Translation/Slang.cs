@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace LinguaBridge.Translation;
@@ -40,7 +41,7 @@ public static partial class Slang
         ["EN"] = Map(new()
         {
             ["idk"] = "I don't know", ["imo"] = "in my opinion", ["imho"] = "in my humble opinion",
-            ["tbh"] = "to be honest", ["ngl"] = "not gonna lie", ["nvm"] = "never mind", ["omw"] = "on my way",
+            ["tbh"] = "to be honest", ["ngl"] = "not going to lie", ["nvm"] = "never mind", ["omw"] = "on my way",
             ["rn"] = "right now", ["irl"] = "in real life", ["ofc"] = "of course", ["pls"] = "please",
             ["plz"] = "please", ["wdym"] = "what do you mean", ["ikr"] = "I know, right", ["lmk"] = "let me know",
             ["hmu"] = "hit me up", ["gtg"] = "got to go", ["g2g"] = "got to go", ["cya"] = "see you",
@@ -128,6 +129,28 @@ public static partial class Slang
             ["ultimamente"] = "últimamente", ["timido"] = "tímido", ["timida"] = "tímida", ["simpatico"] = "simpático",
             ["simpatica"] = "simpática", ["guapisima"] = "guapísima", ["guapisimo"] = "guapísimo", ["bonisima"] = "bonísima",
         }),
+        ["PT"] = Map(new()
+        {
+            ["vc"] = "você", ["vcs"] = "vocês", ["tb"] = "também", ["tbm"] = "também", ["pq"] = "porque", ["pfv"] = "por favor",
+            ["pfvr"] = "por favor", ["n"] = "não", ["q"] = "que", ["oq"] = "o que", ["blz"] = "beleza", ["vlw"] = "valeu",
+            ["tdb"] = "tudo bem", ["td"] = "tudo", ["msm"] = "mesmo", ["mto"] = "muito", ["mta"] = "muita", ["mtos"] = "muitos",
+            ["cmg"] = "comigo", ["ctg"] = "contigo", ["hj"] = "hoje", ["agr"] = "agora", ["kd"] = "cadê",
+            ["sdds"] = "saudades", ["obg"] = "obrigado", ["obgd"] = "obrigado", ["obgda"] = "obrigada", ["bjs"] = "beijos",
+            ["bj"] = "beijo", ["nd"] = "nada", ["ngm"] = "ninguém", ["qnd"] = "quando", ["qdo"] = "quando", ["qm"] = "quem",
+            ["tmj"] = "tamo junto", ["flw"] = "falou", ["dnv"] = "de novo", ["vdd"] = "verdade", ["slk"] = "sério",
+            ["mds"] = "meu Deus", ["aq"] = "aqui", ["ent"] = "então", ["entt"] = "então", ["fzr"] = "fazer", ["tava"] = "estava",
+            ["tao"] = "tão", ["nao"] = "não", ["voce"] = "você", ["tambem"] = "também",
+            ["entao"] = "então", ["amanha"] = "amanhã", ["irma"] = "irmã", ["mae"] = "mãe", ["sao"] = "são",
+        }),
+        ["IT"] = Map(new()
+        {
+            ["x"] = "per", ["ke"] = "che", ["cmq"] = "comunque", ["nn"] = "non", ["xké"] = "perché", ["xke"] = "perché",
+            ["xk"] = "perché", ["xche"] = "perché", ["trp"] = "troppo", ["tvb"] = "ti voglio bene", ["tvtb"] = "ti voglio tanto bene",
+            ["qlc"] = "qualcosa", ["qlcs"] = "qualcosa", ["qnd"] = "quando", ["dv"] = "dove", ["nnt"] = "niente",
+            ["sn"] = "sono", ["cn"] = "con", ["grz"] = "grazie", ["prg"] = "prego", ["cs"] = "cosa", ["ksa"] = "cosa",
+            ["xò"] = "però", ["raga"] = "ragazzi", ["sxo"] = "spero", ["anke"] = "anche", ["ki"] = "chi", ["bn"] = "bene",
+            ["perche"] = "perché", ["piu"] = "più", ["gia"] = "già", ["cosi"] = "così", ["citta"] = "città",
+        }),
         // Russian chat shorthand, in Cyrillic (translit is converted to Cyrillic before this runs: "sps" -> "спс").
         ["RU"] = Map(new()
         {
@@ -170,7 +193,10 @@ public static partial class Slang
         {
             if (!map.TryGetValue(m.Value, out var full))
                 return m.Value;
-            // Keep a leading capital ("Jsp" -> "Je sais pas"), but never upper-case "I"-style expansions.
+            // Shouting stays shouting ("IDK" -> "I DON'T KNOW"); a leading capital is kept ("Jsp" -> "Je sais pas"),
+            // but "I"-style expansions are never lower-cased.
+            if (m.Value.Length > 1 && m.Value.All(c => !char.IsLetter(c) || char.IsUpper(c)) && m.Value.Any(char.IsLetter))
+                return full.ToUpperInvariant();
             return char.IsUpper(m.Value[0]) && full.Length > 0 && char.IsLower(full[0])
                 ? char.ToUpperInvariant(full[0]) + full[1..]
                 : full;

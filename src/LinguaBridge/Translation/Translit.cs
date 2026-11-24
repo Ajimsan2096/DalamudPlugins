@@ -48,7 +48,7 @@ public static partial class Translit
         ("est yest", "есть"), ("esli yesli", "если"), ("ego evo yevo yego", "его"), ("eyo yeyo eio", "её"),
         ("ee", "её"), ("emu yemu", "ему"), ("eti", "эти"), ("eto eta", "это"), ("etot", "этот"), ("etu", "эту"),
         ("etom", "этом"), ("etoy etoj", "этой"), ("etogo etovo", "этого"), ("etomu", "этому"), ("etih etikh", "этих"),
-        ("ekh eh ehh", "эх"), ("ey ei", "эй"),
+        ("ekh eh ehh", "эх"), ("ey ei ej", "ей"), ("ot", "от"), ("sam", "сам"), ("mech", "меч"),
         ("den", "день"), ("dengi", "деньги"), ("zhizn", "жизнь"), ("lyubov ljubov lubov", "любовь"),
         ("noch", "ночь"), ("doch", "дочь"), ("mat", "мать"), ("tetrad", "тетрадь"), ("dver", "дверь"),
         ("voobshe voobshche voobsche vobshe vapshe vabshe vaabshe", "вообще"),
@@ -82,6 +82,18 @@ public static partial class Translit
         ("rus russkiy russkij russkii", "русский"), ("angliyskiy angliyskij angliiskii", "английский"),
         ("ispanskiy ispanskij", "испанский"), ("nemetskiy nemeckij nemetskij", "немецкий"),
         ("vy", "вы"), ("my", "мы"), ("ty", "ты"), ("ya ja", "я"), ("da", "да"), ("net", "нет"), ("ne", "не"),
+        ("silno silna", "сильно"), ("neskolko", "несколько"), ("skolko", "сколько"), ("bolshoe", "большое"),
+        ("pomosh pomoshch pomosch", "помощь"), ("zdes", "здесь"), ("shodit shodi", "сходить"), ("dozhd", "дождь"),
+        ("polzuysya polzujsya", "пользуйся"), ("normalnaya", "нормальная"), ("normalnyy normalnyi", "нормальный"),
+        ("rayon raion rajon", "район"), ("nedelnye nedelnie", "недельные"), ("zabudte", "забудьте"),
+        ("smeyatsya", "смеяться"), ("vernus", "вернусь"), ("gorzhus", "горжусь"), ("ostansya", "останься"),
+        ("zashishu zashchishchu", "защищу"), ("sleduyushee sleduyushchee", "следующее"), ("sleduyushiy sleduyushchiy", "следующий"),
+        ("kto-nibud ktonibud", "кто-нибудь"), ("komu-nibud", "кому-нибудь"), ("chto-nibud chtonibud", "что-нибудь"),
+        ("obyasnit", "объяснить"), ("obyasni", "объясни"), ("podalshe", "подальше"), ("izvinitsya", "извиниться"),
+        ("poznakomitsya", "познакомиться"), ("prisutstvovat", "присутствовать"), ("uvidet", "увидеть"),
+        ("ploshadi ploshchadi", "площади"), ("ploshad ploshchad", "площадь"), ("kidai kidaj kiday", "кидай"),
+        ("ishu ishchu", "ищу"), ("rotacii rotatsii", "ротации"), ("meropriyatii", "мероприятии"),
+        ("zdorove zdorovye", "здоровье"), ("pozhalsta", "пожалуйста"), ("vsem", "всем"),
         ("nu", "ну"), ("i", "и"), ("v", "в"), ("s", "с"), ("k", "к"), ("u", "у"), ("o", "о"), ("a", "а"),
     });
 
@@ -111,7 +123,7 @@ public static partial class Translit
     {
         "ekran", "era", "effekt", "effektivno", "eksperiment", "ekzamen", "energiya", "elf", "elfiyka", "etazh",
         "epizod", "emotsii", "emociya", "emotsiya", "event", "ekipirovka", "elitka", "ekspert", "ekskursiya",
-        "elektrichestvo", "etap", "eho", "ekho", "eti", "etu", "etoy", "etih", "etim", "etimi",
+        "elektrichestvo", "etap", "eho", "ekho", "ekipirovku", "ekipirovki", "ekipirovkoy", "eti", "etu", "etoy", "etih", "etim", "etimi",
     };
 
     /// <summary>A frequent translit word from the list above (3+ letters, so "da", "ty" or "ya" do not count).</summary>
@@ -200,7 +212,12 @@ public static partial class Translit
                 continue;
             }
 
-            sb.Append(lead).Append(ConvertWord(core, infinitiveNext)).Append(trail);
+            // "ey" is ей ("daj ey chashku"), but эй when it calls out to someone ("ey, ty gde?", "ey!").
+            var after = last < text.Length ? text[last] : ' ';
+            if (key is "ey" or "ei" or "ej" && (sb.ToString().Trim().Length == 0 || after is ',' or '!' or '?'))
+                sb.Append(lead).Append(ApplyCase(core, "эй")).Append(trail);
+            else
+                sb.Append(lead).Append(ConvertWord(core, infinitiveNext)).Append(trail);
             // "ne" / "zhe" between the trigger and the verb keep the expectation (ne mogu ne dumat).
             if (key is not ("ne" or "zhe" or "uzhe" or "tozhe" or "eshe" or "esche" or "bolshe" or "prosto"))
                 infinitiveNext = InfinitiveTriggers.Contains(key);

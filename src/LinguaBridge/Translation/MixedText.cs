@@ -38,9 +38,10 @@ public static partial class MixedText
         var langs = pieces.Select(p =>
         {
             var plain = ProtectedText.WithoutProtected(p.Text);
-            return LanguageDetector.Detect(plain, AllCodes) ?? LanguageDetector.WeakGuess(plain, AllCodes);
+            // Two pieces of evidence at least: one shared word ("te", "si", "so") must not make a Spanish sentence French.
+            return LanguageDetector.Detect(plain, AllCodes, minScore: 2);
         }).ToList();
-        // Short or ambiguous chunks ("Estoy...", "Ys,") take the language of the chunk before (or after) them.
+        // Short or ambiguous chunks ("Estoy...", "Ys,", "*sonríe*") take the language of the chunk before (or after) them.
         for (var i = 1; i < langs.Count; i++)
             langs[i] ??= langs[i - 1];
         for (var i = langs.Count - 2; i >= 0; i--)
