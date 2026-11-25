@@ -151,6 +151,22 @@ public static partial class Slang
             ["xò"] = "però", ["raga"] = "ragazzi", ["sxo"] = "spero", ["anke"] = "anche", ["ki"] = "chi", ["bn"] = "bene",
             ["perche"] = "perché", ["piu"] = "più", ["gia"] = "già", ["cosi"] = "così", ["citta"] = "città",
         }),
+        // Dutch / Flemish chat shorthand. "ff" (even) only in lower case: "FF" is the game.
+        ["NL"] = Map(new()
+        {
+            ["ff"] = "even", ["idd"] = "inderdaad", ["gwn"] = "gewoon", ["wss"] = "waarschijnlijk", ["mss"] = "misschien",
+            ["msschn"] = "misschien", ["egt"] = "echt", ["nie"] = "niet", ["ajb"] = "alsjeblieft", ["aub"] = "alstublieft",
+            ["zsm"] = "zo snel mogelijk", ["ivm"] = "in verband met", ["iig"] = "in ieder geval", ["sws"] = "sowieso",
+            ["tog"] = "toch", ["wrm"] = "waarom", ["wnr"] = "wanneer", ["lkkr"] = "lekker", ["vnv"] = "vanavond",
+            ["vnd"] = "vandaag", ["mrgn"] = "morgen", ["srry"] = "sorry", ["hvj"] = "hou van je", ["hvjj"] = "hou van jou",
+            ["ofz"] = "of zo", ["ofzo"] = "of zo", ["bv"] = "bijvoorbeeld", ["evt"] = "eventueel", ["ong"] = "ongeveer",
+            ["grtz"] = "groetjes", ["grtjs"] = "groetjes", ["mvg"] = "met vriendelijke groet", ["suc6"] = "succes",
+            ["tzt"] = "te zijner tijd", ["w8"] = "wacht", ["hb"] = "heb", ["kweet"] = "ik weet", ["kben"] = "ik ben",
+            ["kheb"] = "ik heb", ["kga"] = "ik ga", ["kzal"] = "ik zal", ["kwil"] = "ik wil", ["kmoet"] = "ik moet",
+            ["kdenk"] = "ik denk", ["kvind"] = "ik vind", ["khoop"] = "ik hoop", ["kzie"] = "ik zie",
+            ["das"] = "dat is", ["tis"] = "het is", ["dankje"] = "dank je", ["dankjewel"] = "dank je wel",
+            ["thx"] = "bedankt", ["np"] = "geen probleem", ["gefeli"] = "gefeliciteerd",
+        }),
         // Russian chat shorthand, in Cyrillic (translit is converted to Cyrillic before this runs: "sps" -> "спс").
         ["RU"] = Map(new()
         {
@@ -175,23 +191,47 @@ public static partial class Slang
 
     private static Dictionary<string, string> Map(Dictionary<string, string> d) => new(d, StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Expanded but no evidence of the language: German "das" is a stop word, Dutch chat "das" is "dat is".</summary>
+    private static readonly Dictionary<string, HashSet<string>> NoVote = new()
+    {
+        ["NL"] = new(StringComparer.OrdinalIgnoreCase) { "das", "nie", "np", "thx", "ff", "bv" },
+        // Dutch words: "ik" (I), "kan" (can) must not count as English "ik" (I know) / French "kan" (quand).
+        ["EN"] = new(StringComparer.OrdinalIgnoreCase) { "ik" },
+        ["FR"] = new(StringComparer.OrdinalIgnoreCase) { "kan" },
+    };
+
+    /// <summary>Expanded only when typed exactly like this ("ff" / "Ff" is Dutch "even", "FF" is Final Fantasy).</summary>
+    private static readonly Dictionary<string, HashSet<string>> ExactCase = new()
+    {
+        ["NL"] = new(StringComparer.Ordinal) { "ff", "Ff" },
+    };
+
     public static bool IsKnown(string language, string word) =>
-        Maps.TryGetValue(language, out var map) && map.ContainsKey(word);
+        Maps.TryGetValue(language, out var map) && map.ContainsKey(word) &&
+        !(NoVote.TryGetValue(language, out var skip) && skip.Contains(word));
 
     /// <summary>Replaces known abbreviations of <paramref name="language"/> in <paramref name="text"/>.</summary>
     // French: "tu a" / "tu m'a" / "tu n'a" (very common typo for "tu as" / "tu m'as" / "tu n'as").
     [GeneratedRegex(@"\b([Tt]u (?:n'|m'|t'|l')?)a\b(?!['\-])", RegexOptions.CultureInvariant)]
     private static partial Regex FrenchTuARegex();
 
+    // Dutch: "das is" (typed for "dat is") must not become "dat is is".
+    [GeneratedRegex(@"\b([Dd])as(?= [Ii][Ss]\b)", RegexOptions.CultureInvariant)]
+    private static partial Regex DutchDasIsRegex();
+
     public static string Expand(string text, string language)
     {
         if (language == "FR")
             text = FrenchTuARegex().Replace(text, "$1as");
+        if (language == "NL")
+            text = DutchDasIsRegex().Replace(text, "$1at");
         if (!Maps.TryGetValue(language, out var map))
             return text;
         return TokenRegex().Replace(text, m =>
         {
             if (!map.TryGetValue(m.Value, out var full))
+                return m.Value;
+            if (ExactCase.TryGetValue(language, out var exact) && exact.Contains(m.Value.ToLowerInvariant()) && !exact.Contains(m.Value))
                 return m.Value;
             // Shouting stays shouting ("IDK" -> "I DON'T KNOW"); a leading capital is kept ("Jsp" -> "Je sais pas"),
             // but "I"-style expansions are never lower-cased.

@@ -226,7 +226,7 @@ public sealed partial class LlmTranslator : ITranslator
     private static string LanguageEnglishName(string code) => code.ToUpperInvariant() switch
     {
         "EN" => "English", "FR" => "French", "ES" => "Spanish", "DE" => "German", "IT" => "Italian",
-        "PT" => "Portuguese", "JA" => "Japanese", "ZH" => "Chinese", "KO" => "Korean", "RU" => "Russian",
+        "PT" => "Portuguese", "JA" => "Japanese", "ZH" => "Chinese", "KO" => "Korean", "RU" => "Russian", "NL" => "Dutch",
         _ => code,
     };
 

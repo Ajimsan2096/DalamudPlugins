@@ -61,6 +61,8 @@ public static class ChatSender
                 case '\u2026': sb.Append("..."); break;
                 case '\u0153': sb.Append("oe"); break;
                 case '\u0152': sb.Append("OE"); break;
+                case '\u0133': sb.Append("ij"); break; // Dutch ĳ ligature
+                case '\u0132': sb.Append("IJ"); break;
                 case '\u2022': sb.Append('-'); break;
                 case '\u20AC': sb.Append("EUR"); break;
                 default: sb.Append(c); break;

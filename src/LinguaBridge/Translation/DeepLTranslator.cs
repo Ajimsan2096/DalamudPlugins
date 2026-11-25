@@ -27,7 +27,7 @@ public sealed class DeepLTranslator : ITranslator
         "Casual chat message between players in the online game Final Fantasy XIV. " +
         "Players use internet slang and SMS abbreviations (e.g. French jsp = je sais pas, tkt = t'inquiète, mdr = lol; " +
         "German hdl = hab dich lieb, ka = keine Ahnung, vllt = vielleicht; Spanish tqm = te quiero mucho, ntp = no te " +
-        "preocupes, jaja = haha). " +
+        "preocupes, jaja = haha; Dutch ff = even, idd = inderdaad, wss = waarschijnlijk, gwn = gewoon). " +
         "Keep it short and informal; keep player names, game abbreviations and emoticons unchanged.";
 
     private readonly HttpClient http;

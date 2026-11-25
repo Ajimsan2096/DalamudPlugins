@@ -20,7 +20,7 @@ public static partial class LanguageDetector
                      "you're it's don't dont can't cant thanks thank please sorry want need know think let lets let's up out " +
                      "only after before again also really still never always every much many more other into because which while " +
                      "been being them him her his its our us mine anyone someone something nothing everyone " +
-                     "against over under through around across behind toward towards"),
+                     "against over under through around across behind toward towards help"),
         ["FR"] = Set("le la les un une des et ou mais est sont était être suis es sommes êtes je tu il elle on nous vous ils elles " +
                      "me te se mon ma mes ton ta tes son sa ses notre votre leur ce cet cette ces de du au aux en dans sur pour avec " +
                      "par pas ne non oui qui que quoi où quand pourquoi comment très tout tous bien merci salut bonjour bonsoir " +
@@ -42,7 +42,9 @@ public static partial class LanguageDetector
                      "dich dir mir uns euch sich doch nur jetzt heute hier dann wenn weil dass ob gerne gern lieb schatz süß " +
                      "ganz viel mehr bisschen echt wirklich halt eben denn wieder immer nie geht komm kommst kommt mach macht " +
                      "weiß weiss bis nach über ohne ihm ihn ihnen nee jo genau stimmt klar vielleicht morgen gleich " +
-                     "möchte würde wäre hätte bitte tschüss liebe grüße boah krass geil mädel"),
+                     "möchte würde wäre hätte bitte tschüss liebe grüße boah krass geil mädel " +
+                     "als vielen dank ihre bei lieber fur vom zum zur beim ins an unser unsere unseren jeden jede jeder letzte letzten denkt " +
+                     "weg waren hebt uhr acht weiter"),
         ["IT"] = Set("il lo la i gli le un uno una e o ma è sono era essere io tu lui lei noi voi loro mio mia tuo tua suo sua " +
                      "di del della in con per su non sì che chi dove quando perché come molto tutto bene grazie ciao anche più " +
                      "si mi ti ci vi dello degli delle nel nella nei negli sul sulla alla allo agli dal dalla tra fra " +
@@ -55,6 +57,26 @@ public static partial class LanguageDetector
                      "vocês nao voce tem têm ter fazer foi isso isto essa esse aqui agora depois ainda já pra pro nas pelo pela " +
                      "nosso nossa vai vou quero posso pode sempre hoje amanhã amanha noite oi tchau beleza então entao estava " +
                      "fica ficar obrigada demais tá né dessa desse nessa nesse muita muitos alguém dia me te se lhe vamos nos vez deu gente"),
+        // Dutch (Netherlands and Flemish). Words shared with German / English (ja, die, was, hier, is, of...) are kept: the
+        // weights split them, and the Dutch-only ones (het, een, niet, ik, jij, mijn, ook, wel...) decide. The very
+        // frequent Romance look-alikes (de, en, te, in, al, me, Flemish da) are left out: they would only dilute
+        // Spanish / French / Portuguese evidence and Dutch never needs them.
+        ["NL"] = Set("het een of maar is zijn was waren ben bent heb hebt heeft hebben had ik jij je jou jouw u hij zij ze " +
+                     "wij we jullie mij mijn m'n z'n hem haar hun ons onze dit dat deze die daar hier er van op uit aan " +
+                     "met voor naar bij door om tot als dan want omdat niet geen wel ook nog toch even eens gewoon echt " +
+                     "heel veel meer iets niets niks alles iemand niemand wat wie waar wanneer waarom hoe welke kan kun kunt " +
+                     "kunnen wil wilt willen moet moeten mag mogen zal zou zullen ga gaat gaan kom komt komen doe doet doen " +
+                     "gedaan weet weten denk vind zeg zie zien hoop graag alsjeblieft alstublieft bedankt dank dankje dankjewel " +
+                     "hoi hallo doei dag goedemorgen goedenavond welterusten ja nee jawel neen oké prima leuk lekker mooi jammer " +
+                     "gezellig vandaag morgen gisteren vanavond nu straks zo zeker misschien samen weer altijd nooit jongens " +
+                     "groetjes schatje lieverd sorry zin tijd beetje erg helemaal natuurlijk eigenlijk hoor joh nou hè " +
+                     "geweldig moeilijk makkelijk snel net zoveel zo'n da's kweet gij ge amai allez plezant efkes goesting " +
+                     "wablief seffens goed uw welkom volgende keer beter nieuwe nieuw mee terug weg laat lang eerst eerste " +
+                     "laatste alleen andere iedereen allemaal avond middag week jaar vriend vriendin mensen spelen speel " +
+                     "speelt gespeeld maken gemaakt zeggen gezegd krijgen nodig klaar bezig zitten staan blijven hou houd " +
+                     "houdt ken kent wacht wachten help helpen vraag vragen kopen verkopen prijs zoek zoeken gaat hoeveel " +
+                     "zonder goede vergeet vergeten neem neemt alweer zojuist wordt worden betalen over mis alle één " +
+                     "let na onder gebruiken gaaf vet tof top dikke kus"),
         // Russian: Cyrillic, plus "translit" (FFXIV chat cannot show Cyrillic, so Russians type in Latin letters).
         // Short translit words shared with other languages (da, ne, nu, tut...) are left out; ty / ya / net are kept
         // (a tie with English "ty" or French "ya" just leaves the decision to the engine).
@@ -129,6 +151,9 @@ public static partial class LanguageDetector
     // Digits stay inside words ("4to" is Russian что, "b4" English before), but a word needs a letter.
     [GeneratedRegex(@"[\p{L}\p{N}']*\p{L}[\p{L}\p{N}']*", RegexOptions.CultureInvariant)]
     private static partial Regex WordRegex();
+
+    [GeneratedRegex(@"(?<![\p{L}'])'[tks](?![\p{L}'])", RegexOptions.CultureInvariant)]
+    private static partial Regex DutchClitic();
 
     [GeneratedRegex(@"^(?:dell|nell|all|dall|sull|quell|sull|un|po)'|^c'è", RegexOptions.CultureInvariant)]
     private static partial Regex ItalianElision();
@@ -212,6 +237,28 @@ public static partial class LanguageDetector
         if (IsMostlyCyrillic(text))
             return candidates.Contains("RU") ? "RU" : null;
 
+        var scores = Score(text, candidates, onlyCandidates);
+        if (scores == null || scores.Count == 0)
+            return null;
+
+        var ordered = scores.OrderByDescending(kv => kv.Value).ToList();
+        var best = ordered[0];
+        if (!candidates.Contains(best.Key))
+            return null;
+        var second = ordered.Count > 1 ? ordered[1].Value : 0;
+
+        // Require a clear winner; otherwise let the engine decide.
+        if (best.Value >= minScore && best.Value >= second * 1.5 && best.Value - second >= 0.75)
+            return best.Key;
+        return null;
+    }
+
+    /// <summary>Evidence per language for Latin-script text (diagnostics and audits; Detect makes the decision).</summary>
+    public static IReadOnlyDictionary<string, double> Scores(string text) =>
+        Score(text, Array.Empty<string>(), onlyCandidates: false) ?? new Dictionary<string, double>();
+
+    private static Dictionary<string, double>? Score(string text, IReadOnlyCollection<string> candidates, bool onlyCandidates)
+    {
         var words = WordRegex().Matches(text.ToLowerInvariant())
                                .Select(m => m.Value.Trim('\''))
                                .Where(w => w.Length > 0)
@@ -240,7 +287,9 @@ public static partial class LanguageDetector
             // Elided forms (j'ai, c'est, qu'il...) are a strong French signal; l' is shared with Italian (l'evento),
             // which has its own (dell', nell', all', un', c'è) and stressed final vowels (città, più, però).
             if (lang == "FR")
-                score += words.Sum(w => w.Length > 2 && w[1] == '\'' && "jcdmnstq".Contains(w[0]) && !w.StartsWith("c'è") ? 1.5
+                // (not Dutch m'n / d'r: "m'n" is mijn, "d'r" is daar / haar)
+                score += words.Sum(w => w.Length > 2 && w[1] == '\'' && "jcdmnstq".Contains(w[0]) && !w.StartsWith("c'è") &&
+                                        w is not ("m'n" or "d'r") ? 1.5
                                       : w.Length > 2 && w.StartsWith("l'") ? 0.5 : 0);
             if (lang == "IT")
                 score += words.Sum(w => ItalianElision().IsMatch(w) ? 1.5 : w.StartsWith("l'") ? 0.5 : 0) +
@@ -253,6 +302,14 @@ public static partial class LanguageDetector
                 score += 0.5 * text.Count(c => "ñáíóú¿¡".Contains(char.ToLowerInvariant(c)));
             if (lang == "DE")
                 score += 0.5 * text.Count(c => "äöüß".Contains(char.ToLowerInvariant(c)));
+            // Dutch spelling: "ij" (mijn, zijn, bij, tijd, blij), the contractions 't / 'k / 's ("in 't team", "'k weet
+            // het", "'s avonds"), diminutives after a consonant (schatje, kusje, groetjes; not Spanish mensaje / viajes)
+            // and the doubled vowels "aa" / "uu" (maar, naar, slaap, uur; German "Haar" / "Paar" are rare).
+            if (lang == "NL")
+                score += 0.5 * words.Count(w => w.Contains("ij") && !w.StartsWith("ij") || w.StartsWith("ijs")) +
+                         DutchClitic().Count(text) +
+                         0.5 * words.Count(IsDutchDiminutive) +
+                         0.5 * words.Count(w => (w.Contains("aa") || w.Contains("uu")) && !LongRun().IsMatch(w)); // not "taaank"
             if (lang == "PT")
                 score += text.Count(c => "ãõ".Contains(char.ToLowerInvariant(c))) +
                          0.25 * text.Count(c => "çêô".Contains(char.ToLowerInvariant(c)));
@@ -262,19 +319,13 @@ public static partial class LanguageDetector
             scores[lang] = score;
         }
 
-        if (scores.Count == 0)
-            return null;
+        return scores;
+    }
 
-        var ordered = scores.OrderByDescending(kv => kv.Value).ToList();
-        var best = ordered[0];
-        if (!candidates.Contains(best.Key))
-            return null;
-        var second = ordered.Count > 1 ? ordered[1].Value : 0;
-
-        // Require a clear winner; otherwise let the engine decide.
-        if (best.Value >= minScore && best.Value >= second * 1.5 && best.Value - second >= 0.75)
-            return best.Key;
-        return null;
+    private static bool IsDutchDiminutive(string w)
+    {
+        var j = w.EndsWith("jes") ? w.Length - 3 : w.EndsWith("je") ? w.Length - 2 : -1;
+        return j >= 3 && !"aeiouyé'".Contains(w[j - 1]);
     }
 
     /// <summary>More Cyrillic letters than Latin ones.</summary>

@@ -22,6 +22,7 @@ public static class Languages
         new Language("DE", "Deutsch",    "DE", "DE",    "de"),
         new Language("IT", "Italiano",   "IT", "IT",    "it"),
         new Language("PT", "Português",  "PT", "PT-BR", "pt"),
+        new Language("NL", "Nederlands", "NL", "NL",    "nl"),
         new Language("JA", "日本語",       "JA", "JA",    "ja"),
         // FFXIV's chat font has no Cyrillic: Russian is written in Latin letters in game ("privet").
         new Language("RU", "Russkiy",    "RU", "RU",    "ru"),

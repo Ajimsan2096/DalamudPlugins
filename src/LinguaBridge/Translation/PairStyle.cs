@@ -5,7 +5,7 @@ namespace LinguaBridge.Translation;
 
 /// <summary>
 /// Hand-tuned guidance for the directions this group uses most (ES>FR, FR>EN, EN>FR, ES>DE, DE>EN, plus
-/// ES>EN, FR>ES, EN>DE and DE>ES):
+/// ES>EN, FR>ES, EN>DE, DE>ES and Dutch: NL>EN, EN>NL, ES>NL, NL>ES):
 /// style rules per target language, worked examples (few-shot) for AI engines, a short style hint for DeepL,
 /// and a recommended starter glossary.
 /// </summary>
@@ -35,6 +35,17 @@ public static class PairStyle
             "game words (Tank, Heal, DPS, Raid, Dungeon, Loot, Mount, afk, gg). Terms of endearment: Schatz, Liebling, " +
             "Süße / Süßer, mein Herz, Hase, Maus. Laughter: \"haha\" or \"xD\". Interjections: boah, krass, oh Mann, na ja. " +
             "Capitalise nouns.",
+        ["NL"] =
+            "Dutch style: write like a native Dutch player chatting, not like a textbook or a subtitle. Use 'je' / 'jij' / " +
+            "'jou' between players, never 'u', unless the scene clearly uses formal address. Natural spoken forms are welcome " +
+            "(\"'k\", \"'t\", \"m'n\", \"z'n\", \"da's\", \"ff\" for even), but keep the grammar right: de/het articles, " +
+            "adjective -e endings, verb in second position and at the end of subordinate clauses (omdat, dat, als, of), " +
+            "separable verbs split correctly (\"ik bel je morgen op\"). Use the particles a native would (even, maar, " +
+            "toch, wel, hoor, joh, hè) and diminutives for warmth (schatje, momentje, dingetje). There is no Dutch game " +
+            "client: Dutch players use the English names of jobs, places, items and mechanics (tank, healer, DPS, raid, " +
+            "dungeon, loot, mount, Free Company, Limit Break, Dark Knight) and say \"pullen\", \"wipen\", \"ressen\". " +
+            "Terms of endearment: schat, schatje, lieverd, liefje, lief. Laughter: \"haha\" or \"hihi\". " +
+            "Interjections: jeetje, tjonge, wauw, gaaf, vet, balen, jammer.",
         ["ES"] =
             "Spanish style: natural, informal Spain Spanish chat (tú, contractions of speech), correct gender agreement, " +
             "opening ¿ ¡ marks. Endearments: cariño, amor, bebé, guapa/guapo, mi vida.",
@@ -64,6 +75,19 @@ public static class PairStyle
             "\"Mahlzeit\" = a midday greeting. \"Schatz\", \"Maus\", \"Hase\", \"Süße\" addressed to someone are endearments " +
             "(babe, sweetie, honey), not treasure / mouse / rabbit. German Perfekt (\"ich hab gegessen\") usually means " +
             "a simple past in English. Separable verbs can split across the sentence (\"Ich rufe dich morgen an\").",
+        ["NL"] =
+            "Reading Dutch chat (Netherlands and Flemish): particles (even, maar, toch, wel, hoor, joh, nou, hè) carry tone, " +
+            "not meaning; render the tone (\"Kom maar even hier\" -> \"Come here a sec\"; \"Dat is toch leuk!\" -> \"Isn't " +
+            "that fun!\"), never word for word. A trailing \"hè?\" / \"toch?\" / \"of niet?\" is a tag question (\"right?\"). " +
+            "\"lekker\" = nice / great (not only tasty: \"lekker bezig\" = nice going), \"gezellig\" = cosy / fun to be " +
+            "with, \"zin hebben in\" = to feel like, \"vet\" / \"gaaf\" = cool, \"balen\" = bummer, \"jammer\" = too bad, " +
+            "\"doei\" = bye, \"ff\" = even (a moment, quickly), \"idd\" = indeed, \"gwn\" = just, \"wss\" = probably, " +
+            "\"mss\" = maybe, \"sws\" = anyway / definitely, \"mattie\" / \"gozer\" = buddy / guy, \"meid\" = girl. " +
+            "Flemish: \"ge\" / \"gij\" = you, \"da\" = dat, \"nie\" = niet, \"amai\" = wow, \"allez\" = come on, " +
+            "\"plezant\" = fun, \"goesting\" = to feel like, \"efkes\" = a moment, \"seffens\" = in a bit, " +
+            "\"wablief\" = pardon?. \"Schat\", \"schatje\", \"lieverd\", \"liefje\" addressed to someone are endearments " +
+            "(babe, sweetie, honey), not treasure. Diminutives (-je, -tje) often add warmth, not smallness " +
+            "(\"momentje\" = just a moment). Dutch present tense often means the future (\"ik kom morgen\" = I'll come tomorrow).",
         ["ES"] =
             "Reading Spain Spanish chat: \"tío/tía\" addressed to someone = dude / girl (not uncle/aunt), \"vale\" = okay, " +
             "\"venga\" = come on / alright, \"guay\" = cool, \"mola\" = it's cool, \"qué fuerte\" = no way / that's " +
@@ -143,6 +167,36 @@ public static class PairStyle
             ("You're not allowed to leave, you know that right?",
              "Du darfst nicht gehen, das weißt du doch, oder?"),
         },
+        [("NL", "EN")] = new[]
+        {
+            ("Hé schatje, heb je me gemist? *grijnst ondeugend*",
+             "Hey babe, did you miss me? *grins mischievously*"),
+            ("Ik heb er echt geen zin meer in, zullen we morgen ff verder gaan?",
+             "I'm really not feeling it anymore, shall we pick this up tomorrow?"),
+            ("Das echt lief van je, dankjewel hoor ^^",
+             "Aww, that's really sweet of you, thank you ^^"),
+        },
+        [("EN", "NL")] = new[]
+        {
+            ("*pulls you closer, resting my forehead against yours* I missed you so much, babe.",
+             "*trek je dichter naar me toe en leg mijn voorhoofd tegen het jouwe* Ik heb je zo gemist, schatje."),
+            ("Gotcha, brb in 5",
+             "Oké, ben over 5 min terug"),
+            ("You're not allowed to leave, you know that right?",
+             "Je mag niet weggaan, dat weet je toch?"),
+        },
+        [("ES", "NL")] = new[]
+        {
+            ("*Sonrío y te abrazo por la espalda* ¿Me echaste de menos, cariño?",
+             "*Ik glimlach en sla mijn armen van achteren om je heen* Heb je me gemist, schat?"),
+            ("Tía, no me lo puedo creer jajaja",
+             "Meid, ik geloof het gewoon niet hahaha"),
+        },
+        [("NL", "ES")] = new[]
+        {
+            ("Ik ga hier niet weg, schat *kruipt tegen je aan*",
+             "No me muevo de aquí, cariño *se acurruca contra ti*"),
+        },
         [("DE", "ES")] = new[]
         {
             ("Ich rühr mich hier nicht weg, Schatz *kuschelt sich an dich*",
@@ -171,6 +225,8 @@ public static class PairStyle
         "EN" => "Target style: natural casual English chat (contractions, idioms), not literal.",
         "ES" => "Target style: natural informal Spanish chat (tú).",
         "RU" => "Target style: natural casual Russian chat between friends (ты, not вы), correct case and gender endings.",
+        "NL" => "Target style: natural casual Dutch chat between friends or partners (je/jij, not u; even, hoor, toch), " +
+                "English game terms kept (tank, healer, raid, dungeon).",
         "DE" => "Target style: natural casual German chat between friends or partners (du, not Sie; hab, mal, grad, echt), " +
                 "correct case and gender endings, nouns capitalised.",
         _ => string.Empty,
@@ -193,6 +249,12 @@ public static class PairStyle
         ("DE", "EN", "hab dich ganz doll lieb", "love you so much"), ("DE", "EN", "Küsschen", "kisses"),
         ("EN", "DE", "babe", "Schatz"), ("EN", "DE", "sweetheart", "Liebling"), ("EN", "DE", "my love", "mein Schatz"),
         ("EN", "DE", "princess", "Prinzessin"),
+        ("NL", "EN", "schatje", "babe"), ("NL", "EN", "lieverd", "sweetheart"), ("NL", "EN", "liefje", "sweetie"),
+        ("NL", "EN", "dikke kus", "big kiss"), ("NL", "EN", "doei", "bye"),
+        ("EN", "NL", "babe", "schatje"), ("EN", "NL", "sweetheart", "lieverd"), ("EN", "NL", "my love", "mijn lief"),
+        ("EN", "NL", "princess", "prinses"),
+        ("ES", "NL", "cariño", "schat"), ("ES", "NL", "mi amor", "mijn lief"), ("ES", "NL", "jajaja", "hahaha"),
+        ("NL", "ES", "schatje", "cariño"), ("NL", "ES", "lieverd", "cariño"),
         // FFXIV jobs and terms (official EN <-> FR names)
         ("EN", "FR", "Dark Knight", "Chevalier noir"), ("FR", "EN", "Chevalier noir", "Dark Knight"),
         ("EN", "FR", "White Mage", "Mage blanc"), ("FR", "EN", "Mage blanc", "White Mage"),
