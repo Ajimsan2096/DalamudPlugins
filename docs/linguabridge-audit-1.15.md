@@ -8,6 +8,10 @@ tour/consejos) y las traducciones de la interfaz (ja/de/fr).
 `ProtectedText`, `MixedText` y el analizador de `/tr` y los ejecuta con frases de ejemplo. **No se hizo ninguna llamada
 a Google, DeepL ni a la IA.** No se pudo probar dentro del juego.
 
+> **Estado (1.16.0):** corregido todo lo de las secciones 1 a 4, y hecha la propuesta de la sección 5 (idiomas a no
+> traducir), más la pausa automática de Google con reanudación sola. Sin hacer, a propósito: T11 (variantes ES/PT, no
+> se quieren) y las ideas de la sección 6. Sin poder verificar: "Hurler" / "Crier" en el cliente francés.
+
 Gravedad: **Alta** = traducción errónea, pérdida de mensajes o bloqueo del motor · **Media** = funciona mal en casos
 habituales · **Baja** = detalle o pulido.
 

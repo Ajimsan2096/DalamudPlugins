@@ -99,8 +99,23 @@ public static partial class ProtectedText
     public static string FromDeepLXml(string text) =>
         WebUtility.HtmlDecode(text.Replace("<x>", "").Replace("</x>", ""));
 
-    [GeneratedRegex(@"\{\s*(\d{1,2})\s*\}", RegexOptions.CultureInvariant)]
+    // Full-width braces too: Google often returns "｛0｝" in Japanese.
+    [GeneratedRegex(@"[{｛]\s*(\d{1,2})\s*[}｝]", RegexOptions.CultureInvariant)]
     private static partial Regex PlaceholderRegex();
+
+    /// <summary>
+    /// True when the unprotected text already contains something that looks like a "{0}" placeholder (a player
+    /// typed it): placeholders would then be ambiguous.
+    /// </summary>
+    public static bool HasPlaceholderLookalike(string text) => PlaceholderRegex().IsMatch(WithoutProtected(text));
+
+    /// <summary>Game text commands ("&lt;t&gt;", "&lt;flag&gt;", "&lt;se.3&gt;", "&lt;wait.2&gt;"): never translated.</summary>
+    [GeneratedRegex(@"<[A-Za-z][A-Za-z0-9]*(?:\.[0-9]+)?>", RegexOptions.CultureInvariant)]
+    private static partial Regex GameMacroRegex();
+
+    /// <summary>Wraps game text commands (&lt;t&gt;, &lt;flag&gt;, &lt;pos&gt;, &lt;se.1&gt;...) so engines leave them alone.</summary>
+    public static string ProtectGameMacros(string text) =>
+        text.IndexOf('<') < 0 ? text : MapUnprotected(text, part => GameMacroRegex().Replace(part, m => Wrap(m.Value)));
 
     [GeneratedRegex("\u0002[^\u0003]*\u0003", RegexOptions.CultureInvariant)]
     private static partial Regex SpanRegex();

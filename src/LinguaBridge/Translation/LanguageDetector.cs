@@ -35,7 +35,9 @@ public static partial class LanguageDetector
                      "pues bueno claro oye mira vale guapa guapo cariño amor también tú " +
                      // short Spanish words (not French): "ha sido", "otra vez"
                      "he ha han hemos otra otro vez ese esa esos esas alguien nadie nunca luego después siempre " +
-                     "mañana noche juntos nuestro nuestra puedes quieres ahí allí hecho me te se le les"),
+                     "mañana noche juntos nuestro nuestra puedes quieres ahí allí hecho me te se le les " +
+                     // frequent in short chat lines ("me voy a dormir", "hola gente", "nos vemos")
+                     "hasta desde tiene tienen fue fui estaba estaban están estan gente vemos dormir bueno"),
         ["DE"] = Set("der die das ein eine und oder aber ist sind war sein bin bist ich du er sie es wir ihr mich mein dein " +
                      "nicht kein ja nein mit von zu im am für auf aus wie was wer wo wann warum sehr alles gut danke hallo bitte " +
                      "auch noch schon mal kann will muss gibt den dem einen einem einer nichts habe hab hast haben " +
@@ -138,9 +140,6 @@ public static partial class LanguageDetector
     [GeneratedRegex(@"(\p{L})\1{2,}", RegexOptions.CultureInvariant)]
     private static partial Regex LongRunRegex();
 
-    [GeneratedRegex(@"(\p{L})\1{2,}", RegexOptions.CultureInvariant)]
-    private static partial Regex LongRun();
-
     [GeneratedRegex(@"(\p{L})\1+", RegexOptions.CultureInvariant)]
     private static partial Regex AnyRunRegex();
 
@@ -228,7 +227,7 @@ public static partial class LanguageDetector
 
         // Japanese: kana is unambiguous. Other CJK text (or Japanese outside the candidates) is left to the
         // engine: a stray "ty" or "a" in it must not make it Russian or English.
-        if (text.Any(c => c is >= '぀' and <= 'ヿ'))
+        if (text.Any(c => c is >= '぀' and <= 'ヿ' or >= '\uFF66' and <= '\uFF9F')) // kana, also half-width (ｵｹ)
             return candidates.Contains("JA") ? "JA" : null;
         if (text.Any(c => c is >= '\u3400' and <= '\u9FFF' or >= '\uFF00' and <= '\uFFEF'))
             return null;
@@ -309,13 +308,13 @@ public static partial class LanguageDetector
                 score += 0.5 * words.Count(w => w.Contains("ij") && !w.StartsWith("ij") || w.StartsWith("ijs")) +
                          DutchClitic().Count(text) +
                          0.5 * words.Count(IsDutchDiminutive) +
-                         0.5 * words.Count(w => (w.Contains("aa") || w.Contains("uu")) && !LongRun().IsMatch(w)); // not "taaank"
+                         0.5 * words.Count(w => (w.Contains("aa") || w.Contains("uu")) && !LongRunRegex().IsMatch(w)); // not "taaank"
             if (lang == "PT")
                 score += text.Count(c => "ãõ".Contains(char.ToLowerInvariant(c))) +
                          0.25 * text.Count(c => "çêô".Contains(char.ToLowerInvariant(c)));
             // Russian translit has word shapes no other language here has (zh, kh, shch, -ogo, -tsya, -yy...).
             if (lang == "RU")
-                score += words.Count(w => TranslitShapeRegex().IsMatch(w) && !LongRun().IsMatch(w)); // not "deliveryyy"
+                score += words.Count(w => TranslitShapeRegex().IsMatch(w) && !LongRunRegex().IsMatch(w)); // not "deliveryyy"
             scores[lang] = score;
         }
 

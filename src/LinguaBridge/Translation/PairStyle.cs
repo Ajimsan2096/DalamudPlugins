@@ -49,6 +49,22 @@ public static class PairStyle
         ["ES"] =
             "Spanish style: natural, informal Spain Spanish chat (tú, contractions of speech), correct gender agreement, " +
             "opening ¿ ¡ marks. Endearments: cariño, amor, bebé, guapa/guapo, mi vida.",
+        ["JA"] =
+            "Japanese style: natural casual Japanese chat between players (タメ口: plain forms like だよ, じゃん, かな, ね), " +
+            "not keigo or textbook です/ます, unless the scene is clearly formal or a character speaks politely. Drop " +
+            "pronouns where a native would (no あなた for \"you\"). Japanese players write game terms in katakana or " +
+            "short forms (タンク, ヒーラー, DPS, レイド, ID, マウント, FC, LB). Laughter: \"笑\" or \"w\". Keep emoticons " +
+            "and *actions*. Endearments sparingly and naturally (ダーリン, ハニー, 〜ちゃん / 〜くん after a name).",
+        ["IT"] =
+            "Italian style: natural, informal Italian chat between players (tu, not Lei, unless the scene is formal), " +
+            "correct gender and number agreement for each character, natural spoken forms (\"dai\", \"boh\", \"vabbè\", " +
+            "\"ci sta\"). Italian gamers keep common English game words (tank, healer, DPS, raid, dungeon, loot, mount). " +
+            "Endearments: tesoro, amore, cucciolo / cucciola, piccola. Laughter: \"ahah\" or \"ahahah\".",
+        ["PT"] =
+            "Portuguese style: natural, informal Brazilian Portuguese chat between players (você, \"a gente\", \"tá\", " +
+            "\"pra\"), correct gender agreement for each character. Brazilian gamers keep common English game words (tank, " +
+            "healer, DPS, raid, dungeon, loot, mount). Endearments: amor, meu bem, linda / lindo, fofa / fofo. " +
+            "Laughter: \"kkkk\" or \"haha\".",
         ["RU"] =
             "Russian style: natural casual Russian chat between players (ты, not вы, unless the scene is formal), correct " +
             "case endings and verb/adjective gender for each character (он сделал / она сделала). Russian gamers keep " +
@@ -224,6 +240,9 @@ public static class PairStyle
         "FR" => "Target style: natural spoken French chat between close friends or partners (tu, ça, y a, je sais pas).",
         "EN" => "Target style: natural casual English chat (contractions, idioms), not literal.",
         "ES" => "Target style: natural informal Spanish chat (tú).",
+        "JA" => "Target style: natural casual Japanese chat between players (plain forms, not keigo), game terms in katakana.",
+        "IT" => "Target style: natural informal Italian chat between friends (tu, not Lei).",
+        "PT" => "Target style: natural informal Brazilian Portuguese chat between friends (você, tá, pra).",
         "RU" => "Target style: natural casual Russian chat between friends (ты, not вы), correct case and gender endings.",
         "NL" => "Target style: natural casual Dutch chat between friends or partners (je/jij, not u; even, hoor, toch), " +
                 "English game terms kept (tank, healer, raid, dungeon).",
@@ -232,26 +251,49 @@ public static class PairStyle
         _ => string.Empty,
     };
 
+    /// <summary>
+    /// Entries of older versions of the recommended glossary that did more harm than good (single words that are
+    /// also plain nouns, job names forced into the masculine). Removed from existing configs on update, but only
+    /// when they still have the original translation (the user did not edit them).
+    /// </summary>
+    public static readonly (string From, string To, string Source, string Target)[] RetiredGlossary =
+    {
+        ("EN", "FR", "sweetheart", "mon cœur"), ("EN", "FR", "queen", "ma reine"), ("ES", "FR", "amor", "mon amour"),
+        ("ES", "FR", "reina", "ma reine"), ("EN", "DE", "sweetheart", "Liebling"), ("EN", "NL", "sweetheart", "lieverd"),
+        ("EN", "FR", "Scholar", "Érudit"), ("FR", "EN", "Érudit", "Scholar"), ("EN", "FR", "Summoner", "Invocateur"),
+        ("FR", "EN", "Invocateur", "Summoner"), ("EN", "FR", "Dancer", "Danseur"), ("FR", "EN", "Danseur", "Dancer"),
+        ("EN", "FR", "Warrior", "Guerrier"), ("FR", "EN", "Guerrier", "Warrior"), ("EN", "FR", "Monk", "Moine"),
+        ("FR", "EN", "Moine", "Monk"), ("EN", "FR", "Bard", "Barde"), ("FR", "EN", "Barde", "Bard"),
+        ("EN", "FR", "Reaper", "Faucheur"), ("FR", "EN", "Faucheur", "Reaper"),
+        ("EN", "DE", "Warrior", "Krieger"), ("DE", "EN", "Krieger", "Warrior"), ("EN", "DE", "Scholar", "Gelehrter"),
+        ("DE", "EN", "Gelehrter", "Scholar"), ("EN", "DE", "Summoner", "Beschwörer"), ("DE", "EN", "Beschwörer", "Summoner"),
+        ("EN", "DE", "Reaper", "Schnitter"), ("DE", "EN", "Schnitter", "Reaper"), ("EN", "DE", "Dancer", "Tänzer"),
+        ("DE", "EN", "Tänzer", "Dancer"), ("EN", "DE", "Monk", "Mönch"), ("DE", "EN", "Mönch", "Monk"),
+        ("EN", "DE", "Bard", "Barde"), ("DE", "EN", "Barde", "Bard"),
+    };
+
     /// <summary>Recommended starter glossary: endearments and official FFXIV names that differ between EN and FR.</summary>
     public static readonly (string From, string To, string Source, string Target)[] RecommendedGlossary =
     {
         // Endearments / chat
         ("FR", "EN", "mon cœur", "sweetheart"), ("FR", "EN", "mon coeur", "sweetheart"), ("FR", "EN", "mon amour", "my love"),
         ("FR", "EN", "bisous", "kisses"), ("FR", "EN", "mdr", "lol"), ("FR", "EN", "ptdr", "lmao"),
-        ("EN", "FR", "babe", "bébé"), ("EN", "FR", "sweetheart", "mon cœur"), ("EN", "FR", "my love", "mon amour"),
-        ("EN", "FR", "queen", "ma reine"), ("EN", "FR", "princess", "princesse"), ("EN", "FR", "lol", "mdr"),
-        ("ES", "FR", "amor", "mon amour"), ("ES", "FR", "mi amor", "mon amour"), ("ES", "FR", "bebé", "bébé"),
-        ("ES", "FR", "mi vida", "ma vie"), ("ES", "FR", "princesa", "princesse"), ("ES", "FR", "reina", "ma reine"),
+        // Glossaries replace EVERY occurrence: only phrases that are always a pet name (with "my" / "mi"), never single
+        // words that are also plain nouns ("amor" in "hacer el amor", "reina" in "la reina de Ul'dah").
+        ("EN", "FR", "babe", "bébé"), ("EN", "FR", "my sweetheart", "mon cœur"), ("EN", "FR", "my love", "mon amour"),
+        ("EN", "FR", "my queen", "ma reine"), ("EN", "FR", "princess", "princesse"), ("EN", "FR", "lol", "mdr"),
+        ("ES", "FR", "mi amor", "mon amour"), ("ES", "FR", "bebé", "bébé"),
+        ("ES", "FR", "mi vida", "ma vie"), ("ES", "FR", "princesa", "princesse"), ("ES", "FR", "mi reina", "ma reine"),
         ("ES", "FR", "jajaja", "hahaha"), ("ES", "FR", "jaja", "haha"),
         ("ES", "DE", "mi amor", "mein Schatz"), ("ES", "DE", "mi vida", "mein Herz"), ("ES", "DE", "bebé", "Baby"),
         ("ES", "DE", "princesa", "Prinzessin"), ("ES", "DE", "jajaja", "hahaha"), ("ES", "DE", "jaja", "haha"),
         ("DE", "EN", "mein Schatz", "babe"), ("DE", "EN", "Liebling", "darling"), ("DE", "EN", "hab dich lieb", "love you"),
         ("DE", "EN", "hab dich ganz doll lieb", "love you so much"), ("DE", "EN", "Küsschen", "kisses"),
-        ("EN", "DE", "babe", "Schatz"), ("EN", "DE", "sweetheart", "Liebling"), ("EN", "DE", "my love", "mein Schatz"),
+        ("EN", "DE", "babe", "Schatz"), ("EN", "DE", "my sweetheart", "mein Liebling"), ("EN", "DE", "my love", "mein Schatz"),
         ("EN", "DE", "princess", "Prinzessin"),
         ("NL", "EN", "schatje", "babe"), ("NL", "EN", "lieverd", "sweetheart"), ("NL", "EN", "liefje", "sweetie"),
         ("NL", "EN", "dikke kus", "big kiss"), ("NL", "EN", "doei", "bye"),
-        ("EN", "NL", "babe", "schatje"), ("EN", "NL", "sweetheart", "lieverd"), ("EN", "NL", "my love", "mijn lief"),
+        ("EN", "NL", "babe", "schatje"), ("EN", "NL", "my sweetheart", "mijn lieverd"), ("EN", "NL", "my love", "mijn lief"),
         ("EN", "NL", "princess", "prinses"),
         ("ES", "NL", "cariño", "schat"), ("ES", "NL", "mi amor", "mijn lief"), ("ES", "NL", "jajaja", "hahaha"),
         ("NL", "ES", "schatje", "cariño"), ("NL", "ES", "lieverd", "cariño"),
@@ -261,33 +303,23 @@ public static class PairStyle
         ("EN", "FR", "Black Mage", "Mage noir"), ("FR", "EN", "Mage noir", "Black Mage"),
         ("EN", "FR", "Red Mage", "Mage rouge"), ("FR", "EN", "Mage rouge", "Red Mage"),
         ("EN", "FR", "Gunbreaker", "Pistosabreur"), ("FR", "EN", "Pistosabreur", "Gunbreaker"),
-        ("EN", "FR", "Reaper", "Faucheur"), ("FR", "EN", "Faucheur", "Reaper"),
-        ("EN", "FR", "Scholar", "Érudit"), ("FR", "EN", "Érudit", "Scholar"),
         ("EN", "FR", "Astrologian", "Astromancien"), ("FR", "EN", "Astromancien", "Astrologian"),
         ("EN", "FR", "Dragoon", "Chevalier dragon"), ("FR", "EN", "Chevalier dragon", "Dragoon"),
-        ("EN", "FR", "Summoner", "Invocateur"), ("FR", "EN", "Invocateur", "Summoner"),
         ("EN", "FR", "Machinist", "Machiniste"), ("FR", "EN", "Machiniste", "Machinist"),
-        ("EN", "FR", "Dancer", "Danseur"), ("FR", "EN", "Danseur", "Dancer"),
-        ("EN", "FR", "Warrior", "Guerrier"), ("FR", "EN", "Guerrier", "Warrior"),
-        ("EN", "FR", "Monk", "Moine"), ("FR", "EN", "Moine", "Monk"),
-        ("EN", "FR", "Bard", "Barde"), ("FR", "EN", "Barde", "Bard"),
+        ("EN", "FR", "Pictomancer", "Pictomancien"), ("FR", "EN", "Pictomancien", "Pictomancer"),
+        ("EN", "FR", "Viper", "Rôdeur vipère"), ("FR", "EN", "Rôdeur vipère", "Viper"),
+        ("EN", "FR", "Blue Mage", "Mage bleu"), ("FR", "EN", "Mage bleu", "Blue Mage"),
+        ("EN", "FR", "Limit Break", "Transcendance"), ("FR", "EN", "Transcendance", "Limit Break"),
         ("EN", "FR", "Free Company", "Compagnie libre"), ("FR", "EN", "Compagnie libre", "Free Company"),
         ("EN", "FR", "aether", "éther"), ("FR", "EN", "éther", "aether"),
         // FFXIV jobs and terms (official EN <-> DE names)
         ("EN", "DE", "Dark Knight", "Dunkelritter"), ("DE", "EN", "Dunkelritter", "Dark Knight"),
         ("EN", "DE", "Gunbreaker", "Revolverklinge"), ("DE", "EN", "Revolverklinge", "Gunbreaker"),
-        ("EN", "DE", "Warrior", "Krieger"), ("DE", "EN", "Krieger", "Warrior"),
         ("EN", "DE", "White Mage", "Weißmagier"), ("DE", "EN", "Weißmagier", "White Mage"),
         ("EN", "DE", "Black Mage", "Schwarzmagier"), ("DE", "EN", "Schwarzmagier", "Black Mage"),
         ("EN", "DE", "Red Mage", "Rotmagier"), ("DE", "EN", "Rotmagier", "Red Mage"),
-        ("EN", "DE", "Scholar", "Gelehrter"), ("DE", "EN", "Gelehrter", "Scholar"),
         ("EN", "DE", "Astrologian", "Astrologe"), ("DE", "EN", "Astrologe", "Astrologian"),
-        ("EN", "DE", "Summoner", "Beschwörer"), ("DE", "EN", "Beschwörer", "Summoner"),
-        ("EN", "DE", "Reaper", "Schnitter"), ("DE", "EN", "Schnitter", "Reaper"),
         ("EN", "DE", "Machinist", "Maschinist"), ("DE", "EN", "Maschinist", "Machinist"),
-        ("EN", "DE", "Dancer", "Tänzer"), ("DE", "EN", "Tänzer", "Dancer"),
-        ("EN", "DE", "Monk", "Mönch"), ("DE", "EN", "Mönch", "Monk"),
-        ("EN", "DE", "Bard", "Barde"), ("DE", "EN", "Barde", "Bard"),
         ("EN", "DE", "Pictomancer", "Piktomant"), ("DE", "EN", "Piktomant", "Pictomancer"),
         ("EN", "DE", "Free Company", "Freie Gesellschaft"), ("DE", "EN", "Freie Gesellschaft", "Free Company"),
         ("EN", "DE", "Limit Break", "Limitrausch"), ("DE", "EN", "Limitrausch", "Limit Break"),

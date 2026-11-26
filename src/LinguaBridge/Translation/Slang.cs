@@ -24,12 +24,12 @@ public static partial class Slang
             ["qqn"] = "quelqu'un", ["qqch"] = "quelque chose", ["qq"] = "quelques", ["jtm"] = "je t'aime",
             ["osef"] = "on s'en fout", ["jvais"] = "je vais", ["jveux"] = "je veux", ["chui"] = "je suis",
             ["chuis"] = "je suis", ["jsuis"] = "je suis", ["jpense"] = "je pense", ["jcrois"] = "je crois",
-            ["jme"] = "je me", ["jte"] = "je te", ["jle"] = "je le", ["jai"] = "j'ai", ["ct"] = "c'était",
+            ["jme"] = "je me", ["jte"] = "je te", ["jle"] = "je le", ["jai"] = "j'ai",
             ["vrm"] = "vraiment", ["vrmt"] = "vraiment", ["rdv"] = "rendez-vous", ["auj"] = "aujourd'hui",
             ["ajd"] = "aujourd'hui", ["dac"] = "d'accord", ["dacc"] = "d'accord", ["nn"] = "non", ["ouai"] = "ouais",
             ["pr"] = "pour", ["ds"] = "dans", ["tt"] = "tout", ["tlm"] = "tout le monde", ["frr"] = "frère",
             ["oklm"] = "tranquille", ["askip"] = "à ce qu'il paraît", ["jdois"] = "je dois", ["jpeux"] = "je peux",
-            ["ya"] = "il y a", ["yen"] = "il y en", ["ptet"] = "peut-être", ["p-e"] = "peut-être", ["mm"] = "même",
+            ["ya"] = "il y a", ["yen"] = "il y en", ["ptet"] = "peut-être", ["p-e"] = "peut-être",
             ["kan"] = "quand", ["koi"] = "quoi", ["ki"] = "qui", ["bb"] = "bébé", ["bn"] = "bonne nuit",
             ["ca"] = "ça", ["deja"] = "déjà", ["tres"] = "très", ["etre"] = "être", ["apres"] = "après",
             ["voila"] = "voilà", ["forcant"] = "forçant", ["commencant"] = "commençant", ["francais"] = "français",
@@ -49,7 +49,7 @@ public static partial class Slang
             ["afaik"] = "as far as I know", ["btw"] = "by the way", ["fyi"] = "for your information",
             ["u"] = "you", ["ur"] = "your", ["r"] = "are", ["y"] = "why", ["bc"] = "because", ["cuz"] = "because",
             ["wanna"] = "want to", ["gonna"] = "going to", ["gotta"] = "got to", ["dunno"] = "don't know",
-            ["prob"] = "probably", ["probs"] = "probably", ["def"] = "definitely", ["w/e"] = "whatever",
+            ["probs"] = "probably", ["w/e"] = "whatever",
             ["smth"] = "something", ["sth"] = "something", ["sb"] = "somebody", ["abt"] = "about",
             ["ppl"] = "people", ["msg"] = "message", ["tmrw"] = "tomorrow", ["tmr"] = "tomorrow", ["2day"] = "today",
             ["2nite"] = "tonight", ["b4"] = "before", ["l8r"] = "later", ["ty"] = "thank you", ["thx"] = "thanks",
@@ -109,7 +109,7 @@ public static partial class Slang
             ["dificil"] = "difícil", ["rapido"] = "rápido", ["musica"] = "música", ["razon"] = "razón",
             ["gustaria"] = "gustaría", ["podria"] = "podría", ["deberia"] = "debería", ["querria"] = "querría",
             ["tendria"] = "tendría", ["haria"] = "haría", ["diria"] = "diría", ["estaria"] = "estaría",
-            ["habia"] = "había", ["sabia"] = "sabía", ["queria"] = "quería", ["tenia"] = "tenía", ["podias"] = "podías",
+            ["habia"] = "había", ["queria"] = "quería", ["tenia"] = "tenía", ["podias"] = "podías",
             ["carino"] = "cariño", ["anos"] = "años", ["manana"] = "mañana", ["pequeno"] = "pequeño", ["pequena"] = "pequeña",
             ["perdon"] = "perdón", ["cancion"] = "canción",
             // more chat abbreviations
@@ -124,7 +124,7 @@ public static partial class Slang
             ["mision"] = "misión", ["pelicula"] = "película", ["telefono"] = "teléfono", ["aleman"] = "alemán",
             ["ingles"] = "inglés", ["frances"] = "francés", ["espanol"] = "español",
             ["espanola"] = "española", ["senor"] = "señor", ["senora"] = "señora", ["nino"] = "niño", ["companero"] = "compañero",
-            ["companera"] = "compañera", ["sonrio"] = "sonrío", ["iria"] = "iría", ["vendria"] = "vendría",
+            ["companera"] = "compañera", ["iria"] = "iría", ["vendria"] = "vendría",
             ["sabria"] = "sabría", ["pondria"] = "pondría", ["practicamente"] = "prácticamente",
             ["ultimamente"] = "últimamente", ["timido"] = "tímido", ["timida"] = "tímida", ["simpatico"] = "simpático",
             ["simpatica"] = "simpática", ["guapisima"] = "guapísima", ["guapisimo"] = "guapísimo", ["bonisima"] = "bonísima",
@@ -219,6 +219,28 @@ public static partial class Slang
     [GeneratedRegex(@"\b([Dd])as(?= [Ii][Ss]\b)", RegexOptions.CultureInvariant)]
     private static partial Regex DutchDasIsRegex();
 
+    /// <summary>
+    /// "pq" / "xq" are "por qué" in a question ("pq no vienes?") and "porque" otherwise ("no voy pq estoy cansado").
+    /// Expanding them always to "porque" turned questions into answers.
+    /// </summary>
+    private static readonly Dictionary<string, (string Why, string Because)> WhyOrBecause = new()
+    {
+        ["ES"] = ("por qué", "porque"),
+        ["PT"] = ("por que", "porque"),
+    };
+
+    private static readonly HashSet<string> WhyTokens = new(StringComparer.OrdinalIgnoreCase) { "pq", "xq" };
+
+    /// <summary>True when the sentence around <paramref name="index"/> is a question (¿... or ending in ?).</summary>
+    private static bool InQuestion(string text, int index)
+    {
+        var start = text.LastIndexOfAny(new[] { '.', '!', '?', '\n' }, Math.Max(0, index - 1));
+        if (text.IndexOf('¿', start + 1) is var inv and >= 0 && inv < index)
+            return true;
+        var end = text.IndexOfAny(new[] { '.', '!', '?', '\n' }, index);
+        return end >= 0 && text[end] == '?';
+    }
+
     public static string Expand(string text, string language)
     {
         if (language == "FR")
@@ -229,6 +251,11 @@ public static partial class Slang
             return text;
         return TokenRegex().Replace(text, m =>
         {
+            if (WhyOrBecause.TryGetValue(language, out var why) && WhyTokens.Contains(m.Value))
+            {
+                var word = InQuestion(text, m.Index) ? why.Why : why.Because;
+                return char.IsUpper(m.Value[0]) ? char.ToUpperInvariant(word[0]) + word[1..] : word;
+            }
             if (!map.TryGetValue(m.Value, out var full))
                 return m.Value;
             if (ExactCase.TryGetValue(language, out var exact) && exact.Contains(m.Value.ToLowerInvariant()) && !exact.Contains(m.Value))

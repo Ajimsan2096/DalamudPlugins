@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge.Translation;
 
@@ -48,9 +49,6 @@ public sealed partial class LlmTranslator : ITranslator
 
     public string Name => "AI";
 
-    /// <summary>Name of the provider that answered last (shown in history as the engine).</summary>
-    public string LastProvider { get; private set; } = "AI";
-
     /// <summary>Raised when a provider fails and the next one is tried (provider name, reason).</summary>
     public event Action<string, string>? ProviderUnavailable;
 
@@ -72,8 +70,8 @@ public sealed partial class LlmTranslator : ITranslator
     {
         lock (states)
             if (states.TryGetValue(p.Id, out var s))
-                return s.Until > DateTime.Now ? $"{s.Status} (skipped for now)" : s.Status;
-        return "not used yet";
+                return s.Until > DateTime.Now ? $"{L(s.Status)} {L("(skipped for now)")}" : L(s.Status);
+        return L("not used yet");
     }
 
     public void ResetStates()
@@ -98,7 +96,7 @@ public sealed partial class LlmTranslator : ITranslator
     {
         var providers = ActiveProviders;
         if (providers.Count == 0)
-            throw new TranslationException("No AI provider configured (/lb config > AI).");
+            throw new TranslationException(L("No AI provider configured (/lb config > AI)."));
 
         var (system, user) = BuildPrompt(text, source, target, options);
         string? lastError = null;
@@ -111,14 +109,13 @@ public sealed partial class LlmTranslator : ITranslator
                 var raw = await CompleteAsync(p, Messages(system, user, source, target), text.Length, ct).ConfigureAwait(false);
                 var result = Parse(raw, text);
                 SetState(p, "OK", TimeSpan.Zero);
-                LastProvider = p.Name;
-                return result;
+                return result with { Engine = p.Name };
             }
             catch (LlmFailure f)
             {
-                lastError = $"{p.Name}: {f.Message}";
+                lastError = $"{p.Name}: {L(f.Message)}";
                 SetState(p, f.Message, f.Block);
-                ProviderUnavailable?.Invoke(p.Name, f.Message);
+                ProviderUnavailable?.Invoke(p.Name, L(f.Message));
             }
             catch (HttpRequestException ex)
             {
@@ -127,16 +124,16 @@ public sealed partial class LlmTranslator : ITranslator
             }
             catch (TaskCanceledException) when (!ct.IsCancellationRequested)
             {
-                lastError = $"{p.Name}: timed out";
+                lastError = $"{p.Name}: {L("timed out")}";
                 SetState(p, "timed out", TimeSpan.FromSeconds(30));
             }
         }
 
-        throw new TranslationException(lastError == null ? "All AI providers are paused, retrying soon" : $"AI error ({lastError})");
+        throw new TranslationException(lastError == null ? L("All AI providers are paused, retrying soon") : LF("AI error ({0})", lastError));
     }
 
     /// <summary>Sends a short test translation through one provider (settings "Test" button).</summary>
-    public async Task<string> TestAsync(LlmProvider p, CancellationToken ct)
+    public async Task<(bool Ok, string Text)> TestAsync(LlmProvider p, CancellationToken ct)
     {
         var target = Languages.Get("FR");
         var (system, user) = BuildPrompt("*smiles softly* \"I missed you, you know?\"", Languages.Get("EN"), target,
@@ -146,16 +143,16 @@ public sealed partial class LlmTranslator : ITranslator
             var raw = await CompleteAsync(p, Messages(system, user, Languages.Get("EN"), target), 60, ct).ConfigureAwait(false);
             var r = Parse(raw, "x");
             SetState(p, "OK", TimeSpan.Zero);
-            return "OK: " + r.Text;
+            return (true, "OK: " + r.Text);
         }
         catch (LlmFailure f)
         {
             SetState(p, f.Message, TimeSpan.Zero);
-            return "Failed: " + f.Message;
+            return (false, L("Failed: ") + L(f.Message));
         }
         catch (Exception ex)
         {
-            return "Failed: " + ex.Message;
+            return (false, L("Failed: ") + (ex is TaskCanceledException ? L("timed out") : ex.Message));
         }
     }
 
@@ -236,10 +233,12 @@ public sealed partial class LlmTranslator : ITranslator
         using var request = new HttpRequestMessage(HttpMethod.Get, p.BaseUrl.Trim().TrimEnd('/') + "/models");
         if (!string.IsNullOrWhiteSpace(p.ApiKey))
             request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {p.ApiKey.Trim()}");
-        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(15));
+        using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
-            throw new TranslationException($"HTTP {(int)response.StatusCode}");
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            throw new TranslationException("HTTP " + (int)response.StatusCode); // loc-ok: codes / numbers only
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false));
         var list = new List<string>();
         if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
             foreach (var m in data.EnumerateArray())
@@ -254,6 +253,7 @@ public sealed partial class LlmTranslator : ITranslator
         var text = ThinkRegex().Replace(raw, string.Empty).Trim();
         var detected = string.Empty;
         var m = LangTagRegex().Match(text);
+        var tagged = m.Success;
         if (m.Success)
         {
             detected = m.Groups[1].Value.ToUpperInvariant();
@@ -268,7 +268,9 @@ public sealed partial class LlmTranslator : ITranslator
 
         if (text.Length == 0)
             throw new LlmFailure("empty answer", TimeSpan.FromSeconds(30));
-        if (RefusalRegex().IsMatch(text) && !RefusalRegex().IsMatch(ProtectedText.Plain(original)))
+        // A real translation comes with its [[xx]] tag, even when it starts with "No puedo..." / "I'm sorry..."
+        // (a faithful translation of "Je n'arrive pas..." / "Désolée..."). Refusals skip the format.
+        if (!tagged && RefusalRegex().IsMatch(text) && !RefusalRegex().IsMatch(ProtectedText.Plain(original)))
             throw new LlmFailure("refused the content", TimeSpan.FromMinutes(10));
 
         return new EngineResult(text, detected.Length > 2 ? detected[..2] : detected);
@@ -308,7 +310,7 @@ public sealed partial class LlmTranslator : ITranslator
         }
 
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(20));
+        cts.CancelAfter(TimeSpan.FromSeconds(30)); // slow free / local models answer long RP posts in 15-25 s
         using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
         var payload = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
 
@@ -322,9 +324,7 @@ public sealed partial class LlmTranslator : ITranslator
                 402 => new LlmFailure("no credits left", TimeSpan.FromHours(6)),
                 404 => new LlmFailure("model or URL not found (check the model name)", TimeSpan.FromHours(1)),
                 429 => new LlmFailure("rate limit / daily quota reached", retryAfter ?? TimeSpan.FromMinutes(2)),
-                400 when payload.Contains("safety", StringComparison.OrdinalIgnoreCase) ||
-                         payload.Contains("moderation", StringComparison.OrdinalIgnoreCase) ||
-                         payload.Contains("content", StringComparison.OrdinalIgnoreCase)
+                400 when IsContentFilterError(payload)
                     => new LlmFailure("blocked by the provider's content filter", TimeSpan.FromMinutes(10)),
                 _ => new LlmFailure($"HTTP {status}", TimeSpan.FromSeconds(30)),
             };
@@ -338,6 +338,11 @@ public sealed partial class LlmTranslator : ITranslator
         var content = choice.GetProperty("message").GetProperty("content");
         return content.ValueKind == JsonValueKind.String ? content.GetString() ?? string.Empty : string.Empty;
     }
+
+    /// <summary>A 400 caused by the provider's content filter (not any 400 that mentions a message "content" field).</summary>
+    private static bool IsContentFilterError(string payload) =>
+        new[] { "content_filter", "content_policy", "content policy", "content management", "safety", "moderation", "flagged", "prohibited" }
+            .Any(k => payload.Contains(k, StringComparison.OrdinalIgnoreCase));
 
     private sealed class LlmFailure(string message, TimeSpan block) : Exception(message)
     {

@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using LinguaBridge.Translation;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge.Chat;
 
@@ -49,7 +51,7 @@ public sealed record OutgoingCommand(string ChannelPrefix, Language? Target, str
 
         if (rest.Length == 0)
         {
-            error = "Nothing to translate.";
+            error = L("Nothing to translate.");
             return null;
         }
 
@@ -66,7 +68,12 @@ public sealed record OutgoingCommand(string ChannelPrefix, Language? Target, str
         lang = Languages.TryGet(token[1..]);
         if (lang == null)
         {
-            error = $"Unknown language '{token[1..]}'. Use one of: {string.Join(", ", Languages.All.ConvertAll(l => ":" + l.Code.ToLowerInvariant()))}";
+            // ":D hola", ":3", ":DD", ":) ..." are emoticons, part of the message. Only two lower-case letters
+            // (":xx") read as a mistyped language code.
+            var code = token[1..];
+            if (code.Length == 2 && code.All(char.IsAsciiLetterLower))
+                error = LF("Unknown language '{0}'. Use one of: {1}", code,
+                           string.Join(", ", Languages.All.ConvertAll(l => ":" + l.Code.ToLowerInvariant())));
             return false;
         }
         rest = after;
@@ -103,11 +110,11 @@ public sealed record OutgoingCommand(string ChannelPrefix, Language? Target, str
                 rest = afterSecond;
                 return true;
             }
-            error = "Usage: /tr /t First Last@World message";
+            error = L("Usage: /tr /t First Last@World message");
             return false;
         }
 
-        error = $"Unsupported channel '{cmd}'. Use /s /p /a /fc /em /sh /y /l1-8 /cwl1-8 /t /r.";
+        error = LF("Unsupported channel '{0}'. Use /s /p /a /fc /em /sh /y /l1-8 /cwl1-8 /t /r.", cmd);
         return false;
     }
 

@@ -56,8 +56,19 @@ public sealed class Configuration : IPluginConfiguration
     public bool IncomingOnlyToPreferred { get; set; } = true;
     /// <summary>Words never translated (character names, FC name, nicknames...).</summary>
     public List<string> ProtectedTerms { get; set; } = new();
-    /// <summary>Also translate messages in languages outside the pair (into the preferred language).</summary>
+    /// <summary>Legacy (up to 1.15): also translate languages outside the pair. Migrated into <see cref="LanguageMode"/>.</summary>
     public bool TranslateOtherLanguages { get; set; } = true;
+
+    /// <summary>Which languages of incoming chat get translated: all except the ones you understand, or only a few.</summary>
+    public IncomingLanguageMode LanguageMode { get; set; } = IncomingLanguageMode.AllExcept;
+    /// <summary>Languages you already understand: incoming messages in them are never translated ("all except" mode).</summary>
+    public List<string> UnderstoodLanguages { get; set; } = new();
+    /// <summary>The only languages translated ("only these" mode).</summary>
+    public List<string> OnlyLanguages { get; set; } = new();
+    /// <summary>Players whose messages are never translated.</summary>
+    public List<string> NeverTranslatePlayers { get; set; } = new();
+    /// <summary>Players whose messages are always translated, even in a language you understand.</summary>
+    public List<string> AlwaysTranslatePlayers { get; set; } = new();
 
     // --- Learning ---
     /// <summary>
@@ -87,6 +98,8 @@ public sealed class Configuration : IPluginConfiguration
     /// <summary>When not empty, only messages from these players are translated (names, case-insensitive).</summary>
     public List<string> PlayerWhitelist { get; set; } = new();
     public int MaxMessageLength { get; set; } = 400;
+    /// <summary>Longest message read automatically in roleplay mode (RP posts are long).</summary>
+    public int RoleplayMaxMessageLength { get; set; } = 600;
     /// <summary>Do not translate incoming chat while in combat (fewer distractions during pulls).</summary>
     public bool PauseInCombat { get; set; } = false;
     /// <summary>Ignore a player's message if they sent another less than 0.65 s before (macro spam).</summary>
@@ -95,6 +108,11 @@ public sealed class Configuration : IPluginConfiguration
     // --- Output ---
     /// <summary>Print the translation in the same channel as the original (so it shows in the same chat tab).</summary>
     public bool PrintInSameChannel { get; set; } = true;
+    /// <summary>
+    /// Print translations of tells in Echo instead of as a second tell from that player (which other plugins,
+    /// notification sounds or Discord bridges would treat as a new tell).
+    /// </summary>
+    public bool TellsToEcho { get; set; } = false;
     /// <summary>Show translations below the original, or replace the original with its translation.</summary>
     public IncomingDisplay IncomingDisplay { get; set; } = IncomingDisplay.Below;
     public XivChatType FallbackOutputChannel { get; set; } = XivChatType.Echo;
@@ -120,6 +138,8 @@ public sealed class Configuration : IPluginConfiguration
     // --- Extras ---
     /// <summary>Show an "LB" toggle in the server info bar (top right).</summary>
     public bool ShowDtrEntry { get; set; } = true;
+    /// <summary>No animations (spinner, pulsing tour highlight), for people sensitive to motion.</summary>
+    public bool ReduceMotion { get; set; } = false;
     /// <summary>Add "Translate" to the Party Finder listing context menu.</summary>
     public bool PartyFinderMenu { get; set; } = true;
 
@@ -173,8 +193,35 @@ public sealed class Configuration : IPluginConfiguration
             Version = 2;
             changed = true;
         }
+        if (Version < 3)
+        {
+            // 1.16: "also translate other languages" became a language list.
+            if (!TranslateOtherLanguages)
+            {
+                LanguageMode = IncomingLanguageMode.Only;
+                OnlyLanguages = new List<string> { LanguageA, LanguageB }.Distinct().ToList();
+            }
+            // Recommended glossary entries that mistranslated plain words ("hacer el amor" -> "faire le mon amour").
+            foreach (var (from, to, source, target) in PairStyle.RetiredGlossary)
+                Glossary.RemoveAll(e => e.From == from && e.To == to && e.Source == source && e.Target == target);
+            Version = 3;
+            changed = true;
+        }
         return changed;
     }
+
+    /// <summary>The source languages incoming chat may be translated from (see <see cref="LanguageMode"/>).</summary>
+    public LanguageFilter IncomingFilter() => LanguageMode == IncomingLanguageMode.Only
+        ? new LanguageFilter(Array.Empty<string>(), OnlyLanguages)
+        : new LanguageFilter(UnderstoodLanguages, null);
+}
+
+public enum IncomingLanguageMode
+{
+    /// <summary>Every language except the ones in <see cref="Configuration.UnderstoodLanguages"/>.</summary>
+    AllExcept = 0,
+    /// <summary>Only the languages in <see cref="Configuration.OnlyLanguages"/>.</summary>
+    Only = 1,
 }
 
 public enum IncomingDisplay

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -37,6 +38,21 @@ public sealed class SetupWizard : Window
     private string testResult = string.Empty;
     private StatusKind testKind;
     private bool testing;
+    private bool finished;
+
+    /// <summary>The test sentence, written in each language (the wizard translates it from language A to B).</summary>
+    private static readonly Dictionary<string, string> TestSentences = new()
+    {
+        ["EN"] = "Thanks for the help, see you tonight!",
+        ["FR"] = "Merci pour l'aide, à ce soir !",
+        ["ES"] = "¡Gracias por la ayuda, nos vemos esta noche!",
+        ["DE"] = "Danke für die Hilfe, bis heute Abend!",
+        ["IT"] = "Grazie per l'aiuto, ci vediamo stasera!",
+        ["PT"] = "Obrigado pela ajuda, até hoje à noite!",
+        ["NL"] = "Bedankt voor de hulp, tot vanavond!",
+        ["JA"] = "手伝ってくれてありがとう、また今夜ね！",
+        ["RU"] = "Спасибо за помощь, увидимся вечером!",
+    };
 
     public SetupWizard(Plugin plugin) : base("LinguaBridge setup###LinguaBridgeWizard", ImGuiWindowFlags.NoCollapse)
     {
@@ -45,7 +61,20 @@ public sealed class SetupWizard : Window
         SizeCondition = ImGuiCond.Appearing;
     }
 
-    public override void OnOpen() => step = 1;
+    public override void OnOpen()
+    {
+        step = 1;
+        finished = false;
+    }
+
+    /// <summary>Closed with the X: keep what was chosen so far (it would otherwise come back at every start).</summary>
+    public override void OnClose()
+    {
+        if (finished || plugin.Configuration.ShowedWizard)
+            return;
+        Finish();
+        Plugin.ChatGui.Print(L("Setup closed: your choices so far are kept. /lb wizard opens it again."), "LinguaBridge");
+    }
 
     public override void PreDraw() => WindowName = L("LinguaBridge setup") + "###LinguaBridgeWizard";
 
@@ -173,6 +202,7 @@ public sealed class SetupWizard : Window
 
     private void Finish(bool tour = false)
     {
+        finished = true;
         plugin.Configuration.ShowedWizard = true;
         if (!plugin.Configuration.UiLanguageChosen)
             plugin.SetUiLanguage(Localization.Loc.Current);
@@ -202,13 +232,21 @@ public sealed class SetupWizard : Window
         var b = IndexOf(cfg.LanguageB);
         ImGui.SetNextItemWidth(Ui.S(180));
         if (ImGui.Combo("##wa", ref a, names, names.Length))
+        {
+            if (Languages.All[a].Code == cfg.LanguageB)
+                cfg.LanguageB = cfg.LanguageA; // the same language twice: swap them
             cfg.LanguageA = Languages.All[a].Code;
+        }
         ImGui.SameLine();
         Ui.Icon(FontAwesomeIcon.ExchangeAlt, Ui.Muted);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(Ui.S(180));
         if (ImGui.Combo("##wb", ref b, names, names.Length))
+        {
+            if (Languages.All[b].Code == cfg.LanguageA)
+                cfg.LanguageA = cfg.LanguageB;
             cfg.LanguageB = Languages.All[b].Code;
+        }
         if (cfg.LanguageA == cfg.LanguageB)
             Ui.Status(L("Pick two different languages."), StatusKind.Error);
 
@@ -221,6 +259,34 @@ public sealed class SetupWizard : Window
         var both = !cfg.IncomingOnlyToPreferred;
         if (ImGui.Checkbox(L("Translate in both directions (I read neither language well)"), ref both))
             cfg.IncomingOnlyToPreferred = !both;
+
+        Ui.Section(L("Languages you already understand"), FontAwesomeIcon.Filter,
+                   help: L("Messages in these languages are not translated. You can change it later in Settings > Languages."));
+        using (var table = ImRaii.Table("##wunderstood", 3, ImGuiTableFlags.SizingStretchSame))
+        {
+            if (table)
+            {
+                foreach (var lang in Languages.All)
+                {
+                    ImGui.TableNextColumn();
+                    if (cfg.IncomingOnlyToPreferred && lang.Code == cfg.PreferredLanguage)
+                    {
+                        var on = true;
+                        using (ImRaii.Disabled())
+                            ImGui.Checkbox($"{L(lang.Name)}##wu{lang.Code}", ref on);
+                        Ui.Tooltip(L("The language you read best is never translated."));
+                        continue;
+                    }
+                    var ticked = cfg.UnderstoodLanguages.Contains(lang.Code);
+                    if (ImGui.Checkbox($"{L(lang.Name)}##wu{lang.Code}", ref ticked))
+                    {
+                        cfg.LanguageMode = IncomingLanguageMode.AllExcept;
+                        if (ticked) cfg.UnderstoodLanguages.Add(lang.Code);
+                        else cfg.UnderstoodLanguages.RemoveAll(c => c == lang.Code);
+                    }
+                }
+            }
+        }
 
         Ui.Section(L("Help while you learn"), FontAwesomeIcon.InfoCircle);
         var tips = cfg.TipsEnabled;
@@ -284,7 +350,7 @@ public sealed class SetupWizard : Window
     private async Task Test()
     {
         testing = true;
-        testResult = "Testing...";
+        testResult = L("Testing...");
         testKind = StatusKind.Busy;
         try
         {
@@ -292,9 +358,18 @@ public sealed class SetupWizard : Window
             var cfg = plugin.Configuration;
             var a = Languages.Get(cfg.LanguageA);
             var b = Languages.Get(cfg.LanguageB);
-            var r = await plugin.Translator.TranslateAsync("Thanks for the help, see you tonight!", b.Code == "EN" ? a : b);
-            testResult = r == null ? L("Works (the text was already in that language).") : LF("Works via {0}: {1}", r.Engine, r.Text);
-            testKind = StatusKind.Success;
+            // A sentence in language A, translated into B: a real translation whatever the pair.
+            var r = await plugin.Translator.TranslateAsync(TestSentences.GetValueOrDefault(a.Code, TestSentences["EN"]), b);
+            if (r == null)
+            {
+                testResult = L("No translation came back. Check the languages and the engine.");
+                testKind = StatusKind.Warning;
+            }
+            else
+            {
+                testResult = LF("Works via {0}: {1}", r.Engine, r.Text);
+                testKind = StatusKind.Success;
+            }
         }
         catch (Exception ex)
         {

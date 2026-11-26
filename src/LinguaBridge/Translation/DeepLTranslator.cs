@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using static LinguaBridge.Localization.Loc;
 
 namespace LinguaBridge.Translation;
 
@@ -35,7 +36,8 @@ public sealed class DeepLTranslator : ITranslator
     private readonly object stateLock = new();
     private readonly Dictionary<string, KeyState> states = new();
     private bool qualityModelRejected;
-    private int current; // index of the key that worked last; tried first
+    private volatile int current; // index of the key that worked last; tried first
+    private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(10);
 
     /// <summary>Raised when a key stops working and the next one takes over (index, reason).</summary>
     public event Action<int, string>? KeyUnavailable;
@@ -78,9 +80,10 @@ public sealed class DeepLTranslator : ITranslator
     public string Describe(string key)
     {
         var s = State(key);
-        var usage = s.Usage is { } u ? $"{u.Used:N0} / {u.Limit:N0} chars" : null;
-        var blocked = s.BlockedUntil > DateTime.Now ? " (skipped for now)" : string.Empty;
-        return usage == null ? s.Status + blocked : $"{s.Status}{blocked}, {usage}";
+        var usage = s.Usage is { } u ? LF("{0:N0} / {1:N0} chars", u.Used, u.Limit) : null;
+        var blocked = s.BlockedUntil > DateTime.Now ? " " + L("(skipped for now)") : string.Empty;
+        var status = L(s.Status);
+        return usage == null ? status + blocked : $"{status}{blocked}, {usage}";
     }
 
     /// <summary>Forget "used up / invalid" marks, e.g. after editing keys or at the start of a month.</summary>
@@ -95,7 +98,7 @@ public sealed class DeepLTranslator : ITranslator
     {
         var keys = Keys;
         if (keys.Count == 0)
-            throw new TranslationException("No DeepL API key set (/lb config).");
+            throw new TranslationException(L("No DeepL API key set (/lb config)."));
 
         var start = current < keys.Count ? current : 0;
         string? lastError = null;
@@ -126,16 +129,16 @@ public sealed class DeepLTranslator : ITranslator
             };
             lastError = error;
             if (blockFor == TimeSpan.Zero)
-                throw new TranslationException($"DeepL error: {error}"); // network/server issue: other keys won't help
+                throw new TranslationException(LF("DeepL error: {0}", L(error))); // network/server issue: other keys won't help
             state.BlockedUntil = DateTime.Now + blockFor;
             state.Status = error;
             if (keys.Count > 1)
-                KeyUnavailable?.Invoke(index, error);
+                KeyUnavailable?.Invoke(index, L(error));
         }
 
         throw new TranslationException(keys.Count == 1
-            ? $"DeepL error: {lastError ?? State(keys[0]).Status}"
-            : "DeepL error: all API keys are used up or invalid");
+            ? LF("DeepL error: {0}", L(lastError ?? State(keys[0]).Status))
+            : L("DeepL error: all API keys are used up or invalid"));
     }
 
     private async Task<(EngineResult? Result, int Status, string Error)> TryKeyAsync(
@@ -186,11 +189,13 @@ public sealed class DeepLTranslator : ITranslator
         };
         request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
 
-        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(RequestTimeout);
+        using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
         var status = (int)response.StatusCode;
         if (status == 400 && body.ContainsKey("model_type"))
         {
-            var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            var detail = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
             if (detail.Contains("model_type", StringComparison.OrdinalIgnoreCase))
             {
                 qualityModelRejected = true;
@@ -204,12 +209,12 @@ public sealed class DeepLTranslator : ITranslator
                 401 or 403 => "invalid API key",
                 429 => "too many requests",
                 456 => "monthly quota used up",
-                _ => $"HTTP {status}",
+                _ => "HTTP " + status,
             };
             return (null, status, reason);
         }
 
-        var result = await response.Content.ReadFromJsonAsync<DeepLResponse>(cancellationToken: ct).ConfigureAwait(false);
+        var result = await response.Content.ReadFromJsonAsync<DeepLResponse>(cancellationToken: cts.Token).ConfigureAwait(false);
         if (result?.Translations is not { Length: > 0 } t)
             return (null, 0, "empty response");
 
@@ -226,7 +231,8 @@ public sealed class DeepLTranslator : ITranslator
     public event Action? SaveRequested;
 
     /// <summary>Last glossary sync result, for the settings UI.</summary>
-    public string GlossaryStatus { get; private set; } = "not uploaded yet (uploads on first use)";
+    public string GlossaryStatus => glossaryStatus();
+    private Func<string> glossaryStatus = () => L("not uploaded yet (uploads on first use)");
 
     private static string Hash(string s) =>
         Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(s)))[..12];
@@ -285,23 +291,27 @@ public sealed class DeepLTranslator : ITranslator
                 Content = JsonContent.Create(body),
             };
             request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
-            using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(15));
+            using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
-                var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                GlossaryStatus = $"upload failed for {source.Code}>{target.Code}: HTTP {(int)response.StatusCode} {detail}";
+                var detail = await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false);
+                var code = (int)response.StatusCode;
+                glossaryStatus = () => LF("upload failed for {0}: HTTP {1} {2}", $"{source.Code}>{target.Code}", code, detail);
                 lock (glossaryFailedUntil)
                     glossaryFailedUntil[slot] = DateTime.Now.AddMinutes(10);
                 return null;
             }
 
-            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+            using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false));
             var id = doc.RootElement.GetProperty("glossary_id").GetString()!;
 
             if (stored != null && stored.IndexOf(':') is var colon and > 0)
                 _ = DeleteGlossaryAsync(key, stored[(colon + 1)..]); // replace the outdated one, best effort
             ids[slot] = $"{hash}:{id}";
-            GlossaryStatus = $"{source.Code}>{target.Code} uploaded ({tsv.Split('\n').Length} terms)";
+            var terms = tsv.Split('\n').Length;
+            glossaryStatus = () => LF("{0} uploaded ({1} terms)", $"{source.Code}>{target.Code}", terms);
             SaveRequested?.Invoke();
             return id;
         }
@@ -317,7 +327,8 @@ public sealed class DeepLTranslator : ITranslator
         {
             using var request = new HttpRequestMessage(HttpMethod.Delete, $"{BaseUrl(key)}/v2/glossaries/{id}");
             request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
-            using var _ = await http.SendAsync(request).ConfigureAwait(false);
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            using var _ = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
         }
         catch
         {
@@ -330,14 +341,16 @@ public sealed class DeepLTranslator : ITranslator
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{BaseUrl(key)}/v2/usage");
         request.Headers.TryAddWithoutValidation("Authorization", $"DeepL-Auth-Key {key}");
-        using var response = await http.SendAsync(request, ct).ConfigureAwait(false);
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(RequestTimeout);
+        using var response = await http.SendAsync(request, cts.Token).ConfigureAwait(false);
         var state = State(key);
         if (!response.IsSuccessStatusCode)
         {
-            state.Status = (int)response.StatusCode is 401 or 403 ? "invalid API key" : $"HTTP {(int)response.StatusCode}";
-            throw new TranslationException($"DeepL usage error: {state.Status}");
+            state.Status = (int)response.StatusCode is 401 or 403 ? "invalid API key" : "HTTP " + (int)response.StatusCode;
+            throw new TranslationException(LF("DeepL usage error: {0}", L(state.Status)));
         }
-        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false));
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false));
         var usage = (doc.RootElement.GetProperty("character_count").GetInt64(),
                      doc.RootElement.GetProperty("character_limit").GetInt64());
         state.Usage = usage;
@@ -363,9 +376,9 @@ public sealed class DeepLTranslator : ITranslator
             {
                 await GetUsageAsync(key, ct).ConfigureAwait(false);
             }
-            catch (TranslationException)
+            catch (Exception ex) when (ex is TranslationException or HttpRequestException or TaskCanceledException)
             {
-                // status already recorded
+                // status already recorded (or a network problem: shown as the previous status)
             }
         }
     }
@@ -386,4 +399,3 @@ public sealed class DeepLTranslator : ITranslator
     }
 }
 
-public sealed class TranslationException(string message) : Exception(message);

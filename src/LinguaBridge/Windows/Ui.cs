@@ -138,9 +138,17 @@ internal static class Ui
         _ => FontAwesomeIcon.InfoCircle,
     };
 
-    /// <summary>A small rotating arc the size of a text line.</summary>
+    /// <summary>No animations (Settings > Help > "Reduce motion").</summary>
+    public static bool ReduceMotion { get; set; }
+
+    /// <summary>A small rotating arc the size of a text line (a still hourglass with "Reduce motion").</summary>
     public static void Spinner(Vector4 color)
     {
+        if (ReduceMotion)
+        {
+            Icon(FontAwesomeIcon.HourglassHalf, color);
+            return;
+        }
         var h = ImGui.GetTextLineHeight();
         var pos = ImGui.GetCursorScreenPos();
         var r = h * 0.38f;

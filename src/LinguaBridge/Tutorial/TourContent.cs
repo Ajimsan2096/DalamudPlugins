@@ -89,8 +89,8 @@ public static class TourContent
             "(This list is hidden in \"Translate only\" mode and while replying.)",
             TourWindow.Main, "main.channel"),
         new("Preview before sending",
-            "Preview translates without sending and shows \"Means: ...\", a translation back into your language, so " +
-            "you can check the meaning. Send translates and sends in one go.",
+            "Preview translates without sending, so you can check it first (\"Check the meaning\" translates it back into " +
+            "your language). Send then sends exactly what you previewed, or translates and sends in one go.",
             TourWindow.Main, "main.preview",
             TryIt: "Press Preview to see the translation of what you typed.",
             Done: p => p.MainWindowHasPreview),
@@ -159,7 +159,7 @@ public static class TourContent
 
     public static readonly Tip FirstSend = new("first.send", "Sent translated",
         "Your message went out translated. Your original text is shown in Echo (only to you) so you remember what " +
-        "you wrote.\n\nNot sure about the meaning? In /lb, \"Preview\" shows a back-translation before sending.");
+        "you wrote.\n\nNot sure about the meaning? In /lb, \"Preview\" then \"Check the meaning\" shows it before sending.");
 
     public static readonly Tip FirstReply = new("first.reply", "Replying",
         "Your next message goes to the same channel (and person, for tells) as the message you clicked. " +

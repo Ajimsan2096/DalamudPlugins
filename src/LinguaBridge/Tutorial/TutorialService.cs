@@ -418,7 +418,7 @@ public sealed class TutorialService
     private static void DrawHighlight(AnchorRect t)
     {
         var dl = ImGui.GetForegroundDrawList();
-        var pulse = 0.55f + 0.45f * MathF.Sin((float)ImGui.GetTime() * 4f);
+        var pulse = Ui.ReduceMotion ? 0.9f : 0.55f + 0.45f * MathF.Sin((float)ImGui.GetTime() * 4f);
         var pad = Ui.S(4, 4);
         dl.AddRectFilled(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = 0.10f }), Ui.S(5));
         dl.AddRect(t.Min - pad, t.Max + pad, ImGui.GetColorU32(Accent with { W = pulse }), Ui.S(5), ImDrawFlags.None, Ui.S(3));

@@ -58,9 +58,14 @@ def scan(src):
             yield (i, j + 1, 'reg'); i = j + 1; continue
         i += 1
 
+ESCAPES = {'n': '\n', 'r': '\r', 't': '\t', '0': '\0', '"': '"', "'": "'", '\\': '\\'}
+
 def unescape(lit):
     body = lit[1:-1]
-    return bytes(body, 'utf-8').decode('unicode_escape').encode('latin-1').decode('utf-8') if '\\' in body else body
+    if '\\' not in body:
+        return body
+    return re.sub(r'\\(u[0-9a-fA-F]{4}|.)',
+                  lambda m: chr(int(m.group(1)[1:], 16)) if len(m.group(1)) == 5 else ESCAPES.get(m.group(1), m.group(1)), body)
 
 def groups(src):
     """Concatenated regular-literal expressions: list of (start, end, value)."""
@@ -92,14 +97,27 @@ def add(v):
 
 def file(p): return open(os.path.join(root, p)).read()
 
-# 1. L("...") / LF("...")
-for p in ['Windows/MainWindow.cs','Windows/SetupWizard.cs','Windows/ConfigWindow.cs','Windows/LanguagePrompt.cs',
-          'Tutorial/TutorialService.cs','Plugin.cs']:
+SOURCES = sorted(os.path.relpath(os.path.join(d, f), root)
+                 for d, _, fs in os.walk(root) if '/bin' not in d and '/obj' not in d
+                 for f in fs if f.endswith('.cs'))
+
+# 1. L("...") / LF("...") in every source file
+for p in SOURCES:
     src = file(p)
     for s, e, v in groups(src):
         pre = src[max(0, s-4):s]
         if pre.endswith('L(') or pre.endswith('LF('):
             add(v)
+
+# Engine statuses stored in English and shown through L() (DeepL keys, AI providers).
+for v in ["not used yet", "OK", "invalid API key", "too many requests", "monthly quota used up", "empty response",
+          "network error", "timed out"]: add(v)
+for p in ['Translation/LlmTranslator.cs']:
+    for m in re.finditer(r'new LlmFailure\(\s*"((?:[^"\\]|\\.)*)"', file(p)):
+        add(m.group(1))
+# Language names (English, shown through L()).
+for m in re.finditer(r'new Language\("[A-Z]{2}",\s*"([^"]+)"', file('Translation/Languages.cs')):
+    add(m.group(1))
 
 ID = re.compile(r'^[a-z0-9_.\-]+$')
 def ok(v):
@@ -111,7 +129,8 @@ def block(src, name):
     i = src.index(name); j = src.index('};', i)
     return src[i:j]
 mw = file('Windows/MainWindow.cs'); sw = file('Windows/SetupWizard.cs'); cw = file('Windows/ConfigWindow.cs')
-for src, name, step in [(mw,'SendChannels =',2),(sw,'ChannelPresets =',1),(sw,'StepNames =',1),(cw,'ChannelGroups =',1),(cw,'Formalities =',2)]:
+for src, name, step in [(mw,'SendChannels =',1),(sw,'ChannelPresets =',1),(sw,'StepNames =',1),(cw,'ChannelGroups =',1),(cw,'Formalities =',2),
+                        (cw,'OutputChannels =',1)]:
     b = block(src, name)
     vals = [v for _, _, v in groups(b)]
     if step == 2: vals = vals[0::2]
@@ -136,7 +155,16 @@ for s, e, v in groups(tc):
     if re.fullmatch(r'[A-Za-z]+', v) and v in ["Engine","Languages","Chat","Roleplay","AI","Glossary","Help"]: continue
     add(v)
 
+# 4. User-visible text that never goes through L(): literals passed straight to the chat / status line / errors.
+#    Lines that only show codes or numbers say so with a "// loc-ok" comment.
+LITERAL = re.compile(r'\b(SetStatus|PrintError|ChatGui\.Print|TranslationException|EnginePausedException|Ui\.Status|Ui\.Badge)\(\s*\$?"')
 bad = False
+for p in SOURCES:
+    for n, line in enumerate(file(p).split('\n'), 1):
+        if LITERAL.search(line) and not line.strip().startswith('//') and 'loc-ok' not in line:
+            print(f'untranslated literal: {p}:{n}: {line.strip()[:110]}')
+            bad = True
+
 for name in sorted(os.listdir(os.path.join(root, 'Localization'))):
     if not name.endswith('.json'):
         continue

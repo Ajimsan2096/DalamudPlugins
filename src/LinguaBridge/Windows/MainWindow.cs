@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -16,11 +18,18 @@ namespace LinguaBridge.Windows;
 /// <summary>Translation history with one-click replies, plus a box to compose, preview and send.</summary>
 public sealed class MainWindow : Window
 {
+    /// <summary>Prefix meaning "a tell to the name typed next to the channel list".</summary>
+    private const string TellToName = "/t {name} ";
+
     private static readonly (string Label, string Prefix)[] SendChannels =
     {
         ("Current channel", ""), ("Say", "/s "), ("Emote (/em)", "/em "), ("Party", "/p "), ("Alliance", "/a "), ("Free Company", "/fc "),
-        ("Reply (last tell)", "/r "), ("Linkshell 1", "/l1 "), ("Linkshell 2", "/l2 "), ("Linkshell 3", "/l3 "),
-        ("Cross-world LS 1", "/cwl1 "), ("Cross-world LS 2", "/cwl2 "), ("Cross-world LS 3", "/cwl3 "),
+        ("Reply (last tell)", "/r "), ("Tell to...", TellToName),
+        ("Linkshell 1", "/l1 "), ("Linkshell 2", "/l2 "), ("Linkshell 3", "/l3 "), ("Linkshell 4", "/l4 "),
+        ("Linkshell 5", "/l5 "), ("Linkshell 6", "/l6 "), ("Linkshell 7", "/l7 "), ("Linkshell 8", "/l8 "),
+        ("Cross-world LS 1", "/cwl1 "), ("Cross-world LS 2", "/cwl2 "), ("Cross-world LS 3", "/cwl3 "), ("Cross-world LS 4", "/cwl4 "),
+        ("Cross-world LS 5", "/cwl5 "), ("Cross-world LS 6", "/cwl6 "), ("Cross-world LS 7", "/cwl7 "), ("Cross-world LS 8", "/cwl8 "),
+        ("Novice Network", "/n "), ("PvP Team", "/pvpteam "),
         ("Shout", "/sh "), ("Yell", "/y "), ("Echo (test, only you)", "/e "),
     };
 
@@ -30,15 +39,19 @@ public sealed class MainWindow : Window
     private string input = string.Empty;
     private string preview = string.Empty;
     private string backTranslation = string.Empty;
-    private int targetIndex = -1; // -1 = auto (other language of the pair)
+    private string? targetCode;    // null = auto (other language of the pair)
     private int channelIndex;
+    private string tellName = string.Empty;
+    private string historyFilter = string.Empty;
+    private OutgoingDraft? draft;  // what Preview showed: Send sends exactly this while nothing changed
+    private bool checkingMeaning;
     private string? replyPrefix;   // set by a "Reply" button; overrides the channel combo
     private string replyLabel = string.Empty;
     private bool focusInput;
     private bool busy;
     private string status = string.Empty;
     private StatusKind statusKind;
-    private int lastHistoryCount;
+    private long lastHistoryVersion;
     private bool previewed;        // a preview finished (for the guided tour)
     private float composeHeight;   // measured every frame, so the history fills exactly the rest
 
@@ -58,9 +71,10 @@ public sealed class MainWindow : Window
     public override void Draw()
     {
         plugin.Tutorial.AnchorWindow("main.window");
-        DrawToolbar();
+        var history = plugin.History; // one copy per frame
+        DrawToolbar(history);
         ImGui.Dummy(Ui.S(0, 2));
-        DrawHistory();
+        DrawHistory(history);
 
         var top = ImGui.GetCursorPosY();
         DrawCompose();
@@ -75,7 +89,7 @@ public sealed class MainWindow : Window
 
     // ---------------------------------------------------------------- toolbar
 
-    private void DrawToolbar()
+    private void DrawToolbar(IReadOnlyList<HistoryEntry> history)
     {
         var cfg = plugin.Configuration;
 
@@ -112,9 +126,17 @@ public sealed class MainWindow : Window
         ImGui.SameLine(0, Ui.S(16));
         var pad = (ImGui.GetFrameHeight() - ImGui.GetTextLineHeight() - Ui.S(2)) / 2;
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() + pad);
-        Ui.Badge($"{cfg.LanguageA}  <>  {cfg.LanguageB}   ·   {cfg.Engine}", Ui.Accent,
+        var engine = plugin.Translator.ActiveEngineName;
+        var googlePause = engine == "Google" ? plugin.Translator.Google.PauseRemaining : null;
+        var engineLabel = engine == "AI" ? L("AI") : engine;
+        var pausedTag = googlePause != null ? " " + L("(paused)") : string.Empty;
+        Ui.Badge($"{cfg.LanguageA}  <>  {cfg.LanguageB}   ·   {engineLabel}{pausedTag}", // loc-ok: codes / numbers only
+                 googlePause != null ? Ui.Warning : Ui.Accent,
                  LF("Translating between {0} and {1} with {2}.\nChange it in Settings > Languages / Engine.",
-                    L(Languages.Get(cfg.LanguageA).Name), L(Languages.Get(cfg.LanguageB).Name), cfg.Engine));
+                    L(Languages.Get(cfg.LanguageA).Name), L(Languages.Get(cfg.LanguageB).Name), engineLabel) +
+                 (googlePause is { } left
+                     ? "\n\n" + LF("Google paused (too many requests): resumes by itself at {0:HH:mm}.", DateTime.Now + left)
+                     : string.Empty));
         plugin.Tutorial.Anchor("main.pair");
 
         var spacing = ImGui.GetStyle().ItemSpacing.X;
@@ -122,12 +144,12 @@ public sealed class MainWindow : Window
                     Ui.IconButtonWidth(FontAwesomeIcon.Cog) + spacing * 2;
         Ui.AlignRight(right);
         ImGui.SetCursorPosY(ImGui.GetCursorPosY() - pad);
-        using (ImRaii.Disabled(plugin.History.Count == 0))
+        using (ImRaii.Disabled(history.Count == 0))
         {
             if (Ui.IconButton("clear", FontAwesomeIcon.Broom, L("Clear the history")))
                 ImGui.OpenPopup("##confirmclear");
         }
-        DrawClearConfirm();
+        DrawClearConfirm(history.Count);
         ImGui.SameLine();
         if (Ui.IconButton("tour", FontAwesomeIcon.QuestionCircle, L("Guided tour of this window (/lb tour)")))
             plugin.Tutorial.StartTour(TourContent.MainTourId);
@@ -138,12 +160,12 @@ public sealed class MainWindow : Window
     }
 
     /// <summary>Clearing cannot be undone, so it asks first.</summary>
-    private void DrawClearConfirm()
+    private void DrawClearConfirm(int count)
     {
         using var popup = ImRaii.Popup("##confirmclear");
         if (!popup)
             return;
-        ImGui.TextUnformatted(LF("Clear all {0} translations from the history?", plugin.History.Count));
+        ImGui.TextUnformatted(LF("Clear all {0} translations from the history?", count));
         ImGui.TextColored(Ui.Muted, L("Your chat log is not affected."));
         ImGui.Spacing();
         if (Ui.Button(FontAwesomeIcon.Broom, L("Clear history"), primary: true))
@@ -158,8 +180,21 @@ public sealed class MainWindow : Window
 
     // ---------------------------------------------------------------- history
 
-    private void DrawHistory()
+    private void DrawHistory(IReadOnlyList<HistoryEntry> history)
     {
+        if (history.Count > 0)
+        {
+            Ui.Icon(FontAwesomeIcon.Search, Ui.Muted);
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(Ui.S(220));
+            ImGui.InputTextWithHint("##hfilter", L("Filter by player or text..."), ref historyFilter, 60);
+            if (historyFilter.Length > 0)
+            {
+                ImGui.SameLine();
+                if (Ui.GhostIconButton("clearfilter", FontAwesomeIcon.Times, L("Clear the filter")))
+                    historyFilter = string.Empty;
+            }
+        }
         var reserve = composeHeight > 0 ? composeHeight : ImGui.GetFrameHeightWithSpacing() * 5;
         using (ImRaii.PushColor(ImGuiCol.ChildBg, ImGui.GetStyle().Colors[(int)ImGuiCol.FrameBg] with { W = 0.35f }))
         using (ImRaii.PushStyle(ImGuiStyleVar.ChildRounding, Ui.Rounding))
@@ -170,29 +205,44 @@ public sealed class MainWindow : Window
                 return;
             plugin.Tutorial.AnchorWindow("main.history");
 
-            var history = plugin.History;
             if (history.Count == 0)
             {
                 DrawEmptyHistory();
                 return;
             }
 
+            // Newest is on top: jump there when something new arrives, unless you scrolled down to read.
+            var version = plugin.HistoryVersion;
+            if (version != lastHistoryVersion)
+            {
+                if (ImGui.GetScrollY() <= Ui.S(4))
+                    ImGui.SetScrollY(0);
+                lastHistoryVersion = version;
+            }
+
             var i = 0;
+            var shown = 0;
             foreach (var e in history)
             {
+                if (historyFilter.Length > 0 && !Matches(e, historyFilter))
+                    continue;
                 using var id = ImRaii.PushId(i++);
                 DrawEntry(e);
                 ImGui.Dummy(Ui.S(0, 4));
+                shown++;
             }
-
-            // Newest is on top: jump there when something new arrives.
-            if (history.Count != lastHistoryCount)
-            {
-                lastHistoryCount = history.Count;
-                ImGui.SetScrollY(0);
-            }
+            if (shown == 0)
+                Ui.MutedText(L("No message matches the filter."));
         }
     }
+
+    private static bool Matches(HistoryEntry e, string filter) =>
+        e.Sender.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        e.Translation.Text.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+        e.Translation.Original.Contains(filter, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Player names are shown as they are; "You", "Clipboard", "Listing" are translated.</summary>
+    private static string SenderLabel(HistoryEntry e) => e.FromPlayer ? e.Sender : L(e.Sender);
 
     private static void DrawEmptyHistory()
     {
@@ -234,12 +284,15 @@ public sealed class MainWindow : Window
             Ui.Icon(e.Outgoing ? FontAwesomeIcon.ArrowUp : FontAwesomeIcon.ArrowDown, edge);
             Ui.Tooltip(e.Outgoing ? L("Sent by you") : L("Received"));
             ImGui.SameLine();
-            ImGui.TextColored(edge, L(e.Sender));
+            ImGui.TextColored(edge, SenderLabel(e));
             ImGui.SameLine();
             Ui.Badge(L(e.Channel), Ui.Muted);
             ImGui.SameLine();
-            Ui.Badge($"{e.Translation.Source.Code} > {e.Translation.Target.Code}", edge,
-                     LF("{0} to {1} ({2})", L(e.Translation.Source.Name), L(e.Translation.Target.Name), e.Translation.Engine));
+            if (e.Skipped)
+                Ui.Badge(L("not translated"), Ui.Warning, L("Longer than the maximum message length (Settings > Chat / Roleplay)."));
+            else
+                Ui.Badge($"{e.Translation.Source.Code} > {e.Translation.Target.Code}", edge, // loc-ok: codes / numbers only
+                         LF("{0} to {1} ({2})", L(e.Translation.Source.Name), L(e.Translation.Target.Name), e.Translation.Engine));
 
             var time = $"{e.Time:HH:mm}";
             var spacing = ImGui.GetStyle().ItemSpacing.X;
@@ -264,10 +317,10 @@ public sealed class MainWindow : Window
                 if (e.ReplyPrefix != null)
                 {
                     ImGui.SameLine();
-                    if (Ui.GhostIconButton("reply", FontAwesomeIcon.Reply, LF("Reply to {0} translated, in {1}", e.Sender, L(e.Channel))))
+                    if (Ui.GhostIconButton("reply", FontAwesomeIcon.Reply, LF("Reply to {0} translated, in {1}", SenderLabel(e), L(e.Channel))))
                     {
                         replyPrefix = e.ReplyPrefix;
-                        replyLabel = $"{e.Sender} ({L(e.Channel)})";
+                        replyLabel = $"{SenderLabel(e)} ({L(e.Channel)})";
                         focusInput = true;
                         plugin.Tutorial.ShowTip(TourContent.FirstReply);
                     }
@@ -276,6 +329,17 @@ public sealed class MainWindow : Window
 
             // Body.
             ImGui.Dummy(Ui.S(0, 1));
+            if (e.Skipped)
+            {
+                ImGui.TextWrapped(e.Translation.Text);
+                using (ImRaii.Disabled(busy))
+                {
+                    if (Ui.Button(FontAwesomeIcon.Language, L("Translate")))
+                        _ = TranslateSkipped(e);
+                }
+                ImGui.PopTextWrapPos();
+                goto done;
+            }
             ImGui.TextWrapped(e.Translation.Text);
             if (e.Learning is { } learning)
             {
@@ -293,6 +357,7 @@ public sealed class MainWindow : Window
             Ui.Tooltip(L("Original message"));
 
             ImGui.PopTextWrapPos();
+            done: ;
         }
         var end = new Vector2(start.X + width, ImGui.GetItemRectMax().Y + pad.Y);
 
@@ -385,13 +450,17 @@ public sealed class MainWindow : Window
         }
 
         // Options on the left, actions on the right.
-        string[] targets = { L("Auto (other language)"), LF("To {0}", L(a.Name)), LF("To {0}", L(b.Name)) };
-        var t = targetIndex + 1;
+        // Target: auto, the pair first, then every other language (to write to someone outside the pair).
+        var codes = new[] { (string?)null, a.Code, b.Code }
+                    .Concat(Languages.All.Where(l => l.Code != a.Code && l.Code != b.Code).Select(l => (string?)l.Code))
+                    .ToArray();
+        var targets = codes.Select(c => c == null ? L("Auto (other language)") : LF("To {0}", L(Languages.Get(c).Name))).ToArray();
+        var t = Math.Max(0, Array.IndexOf(codes, targetCode));
         Ui.Icon(FontAwesomeIcon.Language, Ui.Muted);
         ImGui.SameLine();
         ImGui.SetNextItemWidth(Ui.S(165));
         if (ImGui.Combo("##target", ref t, targets, targets.Length))
-            targetIndex = t - 1;
+            targetCode = codes[t];
         Ui.Tooltip(L("Language to translate into"));
         plugin.Tutorial.Anchor("main.target");
 
@@ -427,7 +496,7 @@ public sealed class MainWindow : Window
                     _ = TranslateAndCopy();
             }
             plugin.Tutorial.Anchor("main.preview");
-            DrawPreview();
+            DrawPreview(canCheckMeaning: false);
             return;
         }
 
@@ -443,25 +512,38 @@ public sealed class MainWindow : Window
         Ui.Tooltip(replyPrefix != null ? L("Replying: the message goes where the original came from.") : L("Chat channel to send to"));
         plugin.Tutorial.Anchor("main.channel");
 
+        var needsName = replyPrefix == null && SendChannels[channelIndex].Prefix == TellToName;
+        if (needsName)
+        {
+            ImGui.SameLine();
+            ImGui.SetNextItemWidth(Ui.S(170));
+            ImGui.InputTextWithHint("##tellname", L("First Last@World"), ref tellName, 64);
+            Ui.Tooltip(L("Who receives the tell: First Last@World (the world can be left out on your own world)."));
+        }
+
+        var noName = needsName && tellName.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries).Length < 2;
         var buttons = Ui.IconTextButtonWidth(FontAwesomeIcon.Eye, L("Preview")) +
                       Ui.IconTextButtonWidth(FontAwesomeIcon.PaperPlane, L("Send")) + spacing;
         Ui.AlignRight(buttons);
-        using (ImRaii.Disabled(busy || empty))
+        using (ImRaii.Disabled(busy || empty || noName))
         {
             if (Ui.Button(FontAwesomeIcon.Eye, L("Preview"),
-                          tooltip: L("Translate without sending, and show a back-translation to check the meaning.")))
+                          tooltip: noName ? L("Type the name of the player first (First Last@World).")
+                                          : L("Translate without sending, to check it first. Send then sends exactly this.")))
                 _ = Preview();
             plugin.Tutorial.Anchor("main.preview");
             ImGui.SameLine();
             if (Ui.Button(FontAwesomeIcon.PaperPlane, L("Send"), primary: true,
-                          tooltip: empty ? L("Type something first.") : L("Translate and send (Enter)")))
+                          tooltip: empty ? L("Type something first.")
+                                 : noName ? L("Type the name of the player first (First Last@World).")
+                                 : L("Translate and send (Enter)")))
                 _ = TranslateAndSend();
         }
 
-        DrawPreview();
+        DrawPreview(canCheckMeaning: true);
     }
 
-    private void DrawPreview()
+    private void DrawPreview(bool canCheckMeaning)
     {
         if (preview.Length > 0)
         {
@@ -475,16 +557,27 @@ public sealed class MainWindow : Window
                         ImGui.TextWrapped(LF("Means: {0}", backTranslation));
                     Ui.Tooltip(L("Back-translation into your language, to check the meaning."));
                 }
-                if (ImGui.SmallButton("Copy##preview"))
+                if (ImGui.SmallButton(L("Copy") + "##preview"))
                 {
                     ImGui.SetClipboardText(preview);
                     SetStatus(L("Translation copied to the clipboard."), StatusKind.Success);
                 }
+                if (canCheckMeaning && backTranslation.Length == 0 && draft?.Result != null)
+                {
+                    ImGui.SameLine();
+                    using (ImRaii.Disabled(checkingMeaning))
+                    {
+                        if (ImGui.SmallButton(L("Check the meaning") + "##preview"))
+                            _ = CheckMeaning();
+                    }
+                    Ui.Tooltip(L("Translates it back into your language (one more request)."));
+                }
                 ImGui.SameLine();
-                if (ImGui.SmallButton("Dismiss##preview"))
+                if (ImGui.SmallButton(L("Dismiss") + "##preview"))
                 {
                     preview = string.Empty;
                     backTranslation = string.Empty;
+                    draft = null;
                 }
             });
         }
@@ -495,39 +588,35 @@ public sealed class MainWindow : Window
         }
     }
 
-    private Language? SelectedTarget()
+    private Language? SelectedTarget() => targetCode == null ? null : Languages.TryGet(targetCode);
+
+    /// <summary>Chat prefix the message goes to: the reply target, the tell name, or the selected channel.</summary>
+    private string CurrentPrefix()
     {
-        var cfg = plugin.Configuration;
-        return targetIndex switch
-        {
-            0 => Languages.Get(cfg.LanguageA),
-            1 => Languages.Get(cfg.LanguageB),
-            _ => null,
-        };
+        if (replyPrefix != null)
+            return replyPrefix;
+        var prefix = SendChannels[channelIndex].Prefix;
+        return prefix == TellToName ? $"/t {tellName.Trim()} " : prefix;
     }
 
     private async Task Preview()
     {
         busy = true;
-        SetStatus("Translating...", StatusKind.Busy);
+        SetStatus(L("Translating..."), StatusKind.Busy);
         backTranslation = string.Empty;
+        draft = null;
         try
         {
-            var r = await plugin.Translator.TranslateAsync(input.Trim(), SelectedTarget(), translateOthers: true);
-            if (r == null)
+            var d = await plugin.PrepareOutgoingAsync(input.Trim(), SelectedTarget(), CurrentPrefix());
+            if (d.Result == null)
             {
                 preview = string.Empty;
                 SetStatus(L("Already in the target language: nothing to translate."), StatusKind.Info);
                 return;
             }
-            preview = ChatSender.Clean(r.Text);
-            SetStatus($"{L(r.Source.Name)} > {L(r.Target.Name)} ({r.Engine})", StatusKind.Info);
-            // Back-translate into the source language so the user can check the meaning.
-            if (Languages.TryGet(r.Source.Code) is { } src)
-            {
-                var back = await plugin.Translator.TranslateAsync(r.Text, src, translateOthers: true);
-                backTranslation = back?.Text ?? string.Empty;
-            }
+            draft = d;
+            preview = d.Body;
+            SetStatus($"{L(d.Result.Source.Name)} > {L(d.Result.Target.Name)} ({d.Result.Engine})", StatusKind.Info); // loc-ok: codes / numbers only
         }
         catch (Exception ex)
         {
@@ -540,6 +629,49 @@ public sealed class MainWindow : Window
         }
     }
 
+    /// <summary>Back-translation of the preview, only when asked (it costs one more request).</summary>
+    private async Task CheckMeaning()
+    {
+        var d = draft;
+        if (d?.Result == null || Languages.TryGet(d.Result.Source.Code) is not { } src)
+            return;
+        checkingMeaning = true;
+        try
+        {
+            var back = await plugin.Translator.TranslateAsync(d.Body, src);
+            backTranslation = back?.Text ?? d.Original;
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, StatusKind.Error);
+        }
+        finally
+        {
+            checkingMeaning = false;
+        }
+    }
+
+    private async Task TranslateSkipped(HistoryEntry e)
+    {
+        busy = true;
+        SetStatus(L("Translating..."), StatusKind.Busy);
+        try
+        {
+            SetStatus(await plugin.TranslateSkippedAsync(e)
+                          ? L("Translated.")
+                          : L("Already in the target language: nothing to translate."),
+                      StatusKind.Info);
+        }
+        catch (Exception ex)
+        {
+            SetStatus(ex.Message, StatusKind.Error);
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
     /// <summary>Translate-only mode: translates the box and copies the result; nothing is sent.</summary>
     private async Task TranslateAndCopy()
     {
@@ -547,8 +679,9 @@ public sealed class MainWindow : Window
         if (text.Length == 0)
             return;
         busy = true;
-        SetStatus("Translating...", StatusKind.Busy);
+        SetStatus(L("Translating..."), StatusKind.Busy);
         backTranslation = string.Empty;
+        draft = null;
         try
         {
             var r = await plugin.TranslateTextAsync(text, SelectedTarget());
@@ -578,16 +711,23 @@ public sealed class MainWindow : Window
         if (text.Length == 0)
             return;
         busy = true;
-        SetStatus("Translating...", StatusKind.Busy);
+        SetStatus(L("Translating..."), StatusKind.Busy);
         try
         {
-            var prefix = replyPrefix ?? SendChannels[channelIndex].Prefix;
-            if (await plugin.TranslateAndSendAsync(text, SelectedTarget(), prefix))
+            var prefix = CurrentPrefix();
+            var target = SelectedTarget();
+            // The previewed translation is sent as it is, as long as the text, language and channel did not change.
+            var d = draft;
+            var sent = d != null && d.Original == text && d.Prefix == prefix && d.Target?.Code == target?.Code
+                ? await plugin.SendDraftAsync(d)
+                : await plugin.TranslateAndSendAsync(text, target, prefix);
+            if (sent)
             {
                 input = string.Empty;
                 preview = string.Empty;
                 backTranslation = string.Empty;
-                SetStatus("Sent.", StatusKind.Success);
+                draft = null;
+                SetStatus(L("Sent."), StatusKind.Success);
             }
             else
             {

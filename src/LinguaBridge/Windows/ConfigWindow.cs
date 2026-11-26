@@ -37,17 +37,20 @@ public sealed class ConfigWindow : Window
 
     private static readonly (string Label, string Value)[] Formalities =
     {
-        ("Informal (tu)", "prefer_less"), ("Formal (vous)", "prefer_more"), ("Engine default", "default"),
+        ("Informal (tu / du / tú)", "prefer_less"), ("Formal (vous / Sie / usted)", "prefer_more"), ("Engine default", "default"),
     };
 
-    private static readonly XivChatType[] OutputChannels =
-        { XivChatType.Echo, XivChatType.Debug, XivChatType.SystemMessage, XivChatType.Notice };
+    private static readonly (XivChatType Type, string Label)[] OutputChannels =
+    {
+        (XivChatType.Echo, "Echo"), (XivChatType.Debug, "Debug"), (XivChatType.SystemMessage, "System messages"),
+        (XivChatType.Notice, "Notice"),
+    };
 
     private readonly Plugin plugin;
     private bool showKey;
     private string newKey = string.Empty;
     private int presetIndex;
-    private readonly ConcurrentDictionary<string, string> aiTestResults = new(); // written from background tasks
+    private readonly ConcurrentDictionary<string, (string Text, StatusKind Kind)> aiTestResults = new(); // written from background tasks
     private readonly ConcurrentDictionary<string, List<string>> aiModels = new();
     private string aiPrompt = string.Empty;
     private bool aiPromptLoaded;
@@ -63,6 +66,8 @@ public sealed class ConfigWindow : Window
     private string whitelistText;
     private string protectedText;
     private string learningPlayersText;
+    private string neverPlayersText;
+    private string alwaysPlayersText;
 
     public ConfigWindow(Plugin plugin) : base("LinguaBridge Settings###LinguaBridgeConfig")
     {
@@ -73,7 +78,15 @@ public sealed class ConfigWindow : Window
         whitelistText = string.Join(", ", plugin.Configuration.PlayerWhitelist);
         protectedText = string.Join(", ", plugin.Configuration.ProtectedTerms);
         learningPlayersText = string.Join(", ", plugin.Configuration.LearningPlayers);
+        neverPlayersText = string.Join(", ", plugin.Configuration.NeverTranslatePlayers);
+        alwaysPlayersText = string.Join(", ", plugin.Configuration.AlwaysTranslatePlayers);
     }
+
+    private static List<string> SplitList(string text) =>
+        text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+
+    /// <summary>True when the text field above was just left after editing: save then, not on every key press.</summary>
+    private static bool Committed() => ImGui.IsItemDeactivatedAfterEdit();
 
     public override void OnOpen() => plugin.Tutorial.ShowTip(TourContent.OfferSettingsTour);
 
@@ -228,7 +241,7 @@ public sealed class ConfigWindow : Window
                     newKey = string.Empty;
                     deepl.ResetKeyStates();
                     changed = true;
-                    _ = deepl.GetUsageAsync(k, default); // show status/usage right away
+                    _ = deepl.GetUsageAsync(k, default).ContinueWith(_ => { }); // show status/usage right away
                 }
             }
             ImGui.SameLine();
@@ -254,7 +267,7 @@ public sealed class ConfigWindow : Window
             var f = Array.FindIndex(Formalities, x => x.Value == cfg.DeepLFormality);
             if (f < 0) f = 0;
             ImGui.SetNextItemWidth(Ui.S(200));
-            if (ImGui.Combo(L("Formality (FR/DE/ES/IT/PT/JA/RU)"), ref f, Formalities.Select(x => L(x.Label)).ToArray(), Formalities.Length))
+            if (ImGui.Combo(L("Formality (FR/DE/ES/IT/PT/NL/JA/RU)"), ref f, Formalities.Select(x => L(x.Label)).ToArray(), Formalities.Length))
             {
                 cfg.DeepLFormality = Formalities[f].Value;
                 plugin.Translator.ClearCache();
@@ -286,11 +299,35 @@ public sealed class ConfigWindow : Window
                               "heavy use, and is a bit less natural for English/French than DeepL."));
         }
 
+        if (plugin.Translator.GoogleInUse)
+            DrawGoogleStatus();
+
         ImGui.Dummy(Ui.S(0, 8));
-        Ui.MutedText(LF("Characters sent this session: {0:N0}", plugin.Translator.CharactersSent));
+        Ui.MutedText(LF("Sent this session: {0:N0} requests, {1:N0} characters",
+                        plugin.Translator.RequestsSent, plugin.Translator.CharactersSent));
 
         if (changed)
             plugin.SaveConfig();
+    }
+
+    /// <summary>Google's pause state, with a way to try again right away.</summary>
+    private void DrawGoogleStatus()
+    {
+        Ui.Section(L("Google"), FontAwesomeIcon.Globe,
+                   help: L("To avoid being blocked, LinguaBridge sends Google at most a few requests per minute. If Google " +
+                           "still answers \"too many requests\", translation pauses (2, 5, 10, 20, then 30 minutes), then " +
+                           "LinguaBridge checks by itself whether Google answers again and carries on. Meanwhile messages " +
+                           "are shown untranslated, or translated by DeepL / AI if you set one up."));
+        if (plugin.Translator.Google.PauseRemaining is { } left)
+        {
+            Ui.Status(LF("Paused (too many requests): resumes by itself at {0:HH:mm}.", DateTime.Now + left), StatusKind.Warning);
+            if (Ui.Button(FontAwesomeIcon.Redo, L("Retry now"), tooltip: L("Checks right away whether Google answers again.")))
+                plugin.Translator.Google.ResumeNow();
+        }
+        else
+        {
+            Ui.Status(L("Available."), StatusKind.Success);
+        }
     }
 
     private void DrawLanguages()
@@ -310,6 +347,9 @@ public sealed class ConfigWindow : Window
         ImGui.SetNextItemWidth(Ui.FieldWidth);
         if (ImGui.Combo(L("Language A"), ref a, names, names.Length))
         {
+            // Picking the other language swaps the two (A and B can never be the same).
+            if (Languages.All[a].Code == cfg.LanguageB)
+                cfg.LanguageB = cfg.LanguageA;
             cfg.LanguageA = Languages.All[a].Code;
             changed = true;
         }
@@ -318,12 +358,11 @@ public sealed class ConfigWindow : Window
         ImGui.SetNextItemWidth(Ui.FieldWidth);
         if (ImGui.Combo(L("Language B"), ref b, names, names.Length))
         {
+            if (Languages.All[b].Code == cfg.LanguageA)
+                cfg.LanguageA = cfg.LanguageB;
             cfg.LanguageB = Languages.All[b].Code;
             changed = true;
         }
-
-        if (cfg.LanguageA == cfg.LanguageB)
-            Ui.Status(L("Language A and B must be different."), StatusKind.Error);
         Ui.Hint(L("Your messages sent with /tr go from A to B or from B to A automatically."));
 
         Ui.Section(L("Reading"), FontAwesomeIcon.Book);
@@ -353,12 +392,7 @@ public sealed class ConfigWindow : Window
             changed = true;
         }
 
-        var others = cfg.TranslateOtherLanguages;
-        if (ImGui.Checkbox(L("Also translate other languages (into the language you read best)"), ref others))
-        {
-            cfg.TranslateOtherLanguages = others;
-            changed = true;
-        }
+        DrawLanguageFilter(ref changed);
 
         Ui.Section(L("Never translate these words"), FontAwesomeIcon.ShieldAlt);
         Ui.MutedText(L("Comma separated"));
@@ -367,10 +401,8 @@ public sealed class ConfigWindow : Window
                                    "as written. Item links and auto-translate phrases are always kept automatically."));
         ImGui.SetNextItemWidth(-1);
         if (ImGui.InputTextWithHint("##protected", L("e.g. Rukenu, Les Chocobos, Moogle"), ref protectedText, 2000))
-        {
-            cfg.ProtectedTerms = protectedText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-            changed = true;
-        }
+            cfg.ProtectedTerms = SplitList(protectedText);
+        changed |= Committed();
 
         Ui.Section(L("Learning a language"), FontAwesomeIcon.GraduationCap,
                    help: L("Adds a second line under each translated message, in the language you are learning.\n" +
@@ -398,11 +430,8 @@ public sealed class ConfigWindow : Window
                 ImGui.TextUnformatted(L("Only for these players (comma separated, empty = everyone):"));
                 ImGui.SetNextItemWidth(-1);
                 if (ImGui.InputTextWithHint("##learningplayers", L("e.g. Hanna Weber"), ref learningPlayersText, 1000))
-                {
-                    cfg.LearningPlayers = learningPlayersText
-                                          .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-                    changed = true;
-                }
+                    cfg.LearningPlayers = SplitList(learningPlayersText);
+                changed |= Committed();
 
                 var untranslated = cfg.LearningForUntranslated;
                 if (ImGui.Checkbox(L("Also for messages already in the language I read best"), ref untranslated))
@@ -413,11 +442,10 @@ public sealed class ConfigWindow : Window
                 ImGuiComponents.HelpMarker(L("Off: only messages that get translated also get the learning line.\n" +
                                            "On: messages written in your own language get it too (more engine requests)."));
 
-                int lcolor = cfg.LearningTagColor;
-                ImGui.SetNextItemWidth(Ui.S(150));
-                if (ImGui.InputInt(L("Learning tag colour (UIColor id)"), ref lcolor))
+                var lcolor = cfg.LearningTagColor;
+                if (ColorPicker("learningcolor", L("Learning tag colour"), ref lcolor))
                 {
-                    cfg.LearningTagColor = (ushort)Math.Clamp(lcolor, 0, 1000);
+                    cfg.LearningTagColor = lcolor;
                     changed = true;
                 }
             }
@@ -427,6 +455,81 @@ public sealed class ConfigWindow : Window
         {
             plugin.Translator.ClearCache();
             plugin.SaveConfig();
+        }
+    }
+
+    /// <summary>Which languages of incoming chat are translated: all except the ones you understand, or only a few.</summary>
+    private void DrawLanguageFilter(ref bool changed)
+    {
+        var cfg = plugin.Configuration;
+        Ui.Section(L("Languages to translate"), FontAwesomeIcon.Filter,
+                   help: L("Messages in a language you understand are left as they are: they cost no request and do not fill " +
+                           "your chat. LinguaBridge recognises most messages by itself, without asking the engine."));
+
+        var mode = (int)cfg.LanguageMode;
+        if (ImGui.RadioButton(L("Every language, except the ones I understand"), ref mode, 0))
+        {
+            cfg.LanguageMode = IncomingLanguageMode.AllExcept;
+            changed = true;
+        }
+        if (cfg.LanguageMode == IncomingLanguageMode.AllExcept)
+            LanguageChecklist("understood", cfg.UnderstoodLanguages, alwaysOn: cfg.IncomingOnlyToPreferred ? cfg.PreferredLanguage : null,
+                              alwaysOnHint: L("The language you read best is never translated."), ref changed);
+
+        if (ImGui.RadioButton(L("Only these languages"), ref mode, 1))
+        {
+            cfg.LanguageMode = IncomingLanguageMode.Only;
+            if (cfg.OnlyLanguages.Count == 0)
+                cfg.OnlyLanguages = new[] { cfg.LanguageA, cfg.LanguageB }.Where(c => c != cfg.PreferredLanguage).Distinct().ToList();
+            changed = true;
+        }
+        if (cfg.LanguageMode == IncomingLanguageMode.Only)
+        {
+            LanguageChecklist("only", cfg.OnlyLanguages, alwaysOn: null, alwaysOnHint: null, ref changed);
+            if (cfg.OnlyLanguages.Count == 0)
+                Ui.Status(L("No language ticked: nothing will be translated."), StatusKind.Warning);
+        }
+
+        ImGui.Dummy(Ui.S(0, 4));
+        ImGui.TextUnformatted(L("Never translate these players (comma separated):"));
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.InputTextWithHint("##neverplayers", L("e.g. Hanna Weber, Rukenu"), ref neverPlayersText, 1000))
+            cfg.NeverTranslatePlayers = SplitList(neverPlayersText);
+        changed |= Committed();
+        ImGui.TextUnformatted(L("Always translate these players, whatever their language (comma separated):"));
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.InputTextWithHint("##alwaysplayers", L("e.g. Hanna Weber"), ref alwaysPlayersText, 1000))
+            cfg.AlwaysTranslatePlayers = SplitList(alwaysPlayersText);
+        changed |= Committed();
+        Ui.Hint(L("A first name alone (Hanna) matches that player; part of a name (Han) does not."));
+    }
+
+    /// <summary>Three columns of language checkboxes bound to <paramref name="list"/>.</summary>
+    private static void LanguageChecklist(string id, List<string> list, string? alwaysOn, string? alwaysOnHint, ref bool changed)
+    {
+        using var indent = ImRaii.PushIndent();
+        using var table = ImRaii.Table("##" + id, 3, ImGuiTableFlags.SizingStretchSame);
+        if (!table)
+            return;
+        foreach (var lang in Languages.All)
+        {
+            ImGui.TableNextColumn();
+            if (lang.Code == alwaysOn)
+            {
+                var on = true;
+                using (ImRaii.Disabled())
+                    ImGui.Checkbox($"{L(lang.Name)}##{id}{lang.Code}", ref on);
+                if (alwaysOnHint != null)
+                    Ui.Tooltip(alwaysOnHint);
+                continue;
+            }
+            var ticked = list.Contains(lang.Code);
+            if (ImGui.Checkbox($"{L(lang.Name)}##{id}{lang.Code}", ref ticked))
+            {
+                if (ticked) list.Add(lang.Code);
+                else list.RemoveAll(c => c == lang.Code);
+                changed = true;
+            }
         }
     }
 
@@ -446,9 +549,7 @@ public sealed class ConfigWindow : Window
         Ui.Section(L("Channels to translate"), FontAwesomeIcon.Comments);
         using (var table = ImRaii.Table("channels", 2, ImGuiTableFlags.SizingStretchSame))
         {
-            if (!table)
-                return;
-            foreach (var (label, types) in ChannelGroups)
+            foreach (var (label, types) in table ? ChannelGroups : Array.Empty<(string, XivChatType[])>())
             {
                 ImGui.TableNextColumn();
                 var on = types.All(cfg.Channels.Contains);
@@ -491,18 +592,16 @@ public sealed class ConfigWindow : Window
         ImGui.TextUnformatted(L("Only translate these players (comma separated, empty = everyone):"));
         ImGui.SetNextItemWidth(-1);
         if (ImGui.InputText("##whitelist", ref whitelistText, 1000))
-        {
-            cfg.PlayerWhitelist = whitelistText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
-            changed = true;
-        }
+            cfg.PlayerWhitelist = SplitList(whitelistText);
+        changed |= Committed();
 
         var max = cfg.MaxMessageLength;
         ImGui.SetNextItemWidth(Ui.S(150));
         if (ImGui.SliderInt(L("Max message length"), ref max, 20, 500))
-        {
             cfg.MaxMessageLength = max;
-            changed = true;
-        }
+        changed |= Committed();
+        ImGuiComponents.HelpMarker(L("Longer messages are not translated automatically: they are listed in the /lb window with a " +
+                                   "\"Translate\" button. In roleplay mode the limit is set in Settings > Roleplay."));
 
         Ui.Section(L("Output"), FontAwesomeIcon.Eye);
 
@@ -527,22 +626,38 @@ public sealed class ConfigWindow : Window
         }
         if (!cfg.PrintInSameChannel)
         {
-            var idx = Math.Max(0, Array.IndexOf(OutputChannels, cfg.FallbackOutputChannel));
+            var idx = Math.Max(0, Array.FindIndex(OutputChannels, c => c.Type == cfg.FallbackOutputChannel));
             ImGui.SetNextItemWidth(Ui.S(150));
-            if (ImGui.Combo(L("Output channel"), ref idx, OutputChannels.Select(c => c.ToString()).ToArray(), OutputChannels.Length))
+            if (ImGui.Combo(L("Output channel"), ref idx, OutputChannels.Select(c => L(c.Label)).ToArray(), OutputChannels.Length))
             {
-                cfg.FallbackOutputChannel = OutputChannels[idx];
+                cfg.FallbackOutputChannel = OutputChannels[idx].Type;
                 changed = true;
             }
         }
-
-        int color = cfg.TagColor;
-        ImGui.SetNextItemWidth(Ui.S(150));
-        if (ImGui.InputInt(L("Tag colour (UIColor id)"), ref color))
+        else if (cfg.IncomingDisplay != IncomingDisplay.Replace)
         {
-            cfg.TagColor = (ushort)Math.Clamp(color, 0, 1000);
+            var tellsEcho = cfg.TellsToEcho;
+            if (ImGui.Checkbox(L("Show translations of tells in Echo"), ref tellsEcho))
+            {
+                cfg.TellsToEcho = tellsEcho;
+                changed = true;
+            }
+            ImGuiComponents.HelpMarker(L("Otherwise the translation shows up as a second tell from that player, and other plugins " +
+                                       "(notification sounds, Discord bridges, chat plugins) treat it as a new tell."));
+        }
+
+        var color = cfg.TagColor;
+        if (ColorPicker("tagcolor", L("Tag colour"), ref color))
+        {
+            cfg.TagColor = color;
             changed = true;
         }
+
+        var historySize = cfg.HistorySize;
+        ImGui.SetNextItemWidth(Ui.S(150));
+        if (ImGui.SliderInt(L("Messages kept in the /lb history"), ref historySize, 50, 1000))
+            cfg.HistorySize = historySize;
+        changed |= Committed();
 
         var shortTag = cfg.ShortTag;
         if (ImGui.Checkbox(L("Short tag: [FR] instead of [EN>FR]"), ref shortTag))
@@ -597,7 +712,7 @@ public sealed class ConfigWindow : Window
                           " - DeepL is told it is translating in-character prose (tone, voice, mature scenes untouched).\n" +
                           " - *actions*, \"speech\" / « speech », ((OOC)) and [OOC ...] keep their markers.\n" +
                           " - Emotes (/em) are translated, using the character name as subject; /tr /em works too.\n" +
-                          " - Multi-line posts are not dropped as macro spam, and posts up to 600 characters are read.\n" +
+                          " - Multi-line posts are not dropped as macro spam, and longer posts are read (see Long posts below).\n" +
                           " - IC, OOC, RP, ERP... and character names stay untouched."));
 
         Ui.Section(L("Translation context"), FontAwesomeIcon.Book);
@@ -616,10 +731,8 @@ public sealed class ConfigWindow : Window
         var lines = cfg.ContextLines;
         ImGui.SetNextItemWidth(Ui.S(200));
         if (ImGui.SliderInt(L("Conversation lines used as context"), ref lines, 0, 10))
-        {
             cfg.ContextLines = lines;
-            changed = true;
-        }
+        changed |= Committed();
         ImGuiComponents.HelpMarker(L("The previous lines of the same chat (party, a tell, say + emotes...) are sent to DeepL " +
                                    "as context. DeepL does not bill context characters. It fixes pronouns, gender " +
                                    "agreement (il/elle, beau/belle), tu/vous and ambiguous words. Applies outside RP too."));
@@ -643,14 +756,19 @@ public sealed class ConfigWindow : Window
                                    "\"Setting: a quiet inn in Ul'dah at night. The characters are a couple, intimate and teasing. " +
                                    "Keep pet names (bebé, mon chéri, princess) as written.\""));
         if (ImGui.InputTextMultiline("##scene", ref sceneNotes, 600, new Vector2(-1, ImGui.GetTextLineHeight() * 4)))
-        {
             cfg.RpSceneNotes = sceneNotes;
-            changed = true;
-        }
+        changed |= Committed();
 
         DrawCharacters(ref changed);
 
-        Ui.Section(L("Sending long posts"), FontAwesomeIcon.PaperPlane);
+        Ui.Section(L("Long posts"), FontAwesomeIcon.PaperPlane);
+        var rpMax = cfg.RoleplayMaxMessageLength;
+        ImGui.SetNextItemWidth(Ui.S(200));
+        if (ImGui.SliderInt(L("Longest post translated automatically in RP"), ref rpMax, 100, 1500))
+            cfg.RoleplayMaxMessageLength = rpMax;
+        changed |= Committed();
+        ImGuiComponents.HelpMarker(L("Longer posts are listed in the /lb window with a \"Translate\" button."));
+
         var split = cfg.SplitLongMessages;
         if (ImGui.Checkbox(L("Split translations longer than the chat limit into several lines"), ref split))
         {
@@ -696,7 +814,7 @@ public sealed class ConfigWindow : Window
                 changed = true;
             }
         }
-        var last = plugin.History.FirstOrDefault(h => !h.Outgoing && h.Sender is not ("Listing" or "You"))?.Sender;
+        var last = plugin.History.FirstOrDefault(h => h.FromPlayer)?.Sender;
         if (last != null && !cfg.Characters.Any(c => c.Name.Equals(last, StringComparison.OrdinalIgnoreCase)))
         {
             if (quick)
@@ -727,10 +845,8 @@ public sealed class ConfigWindow : Window
                     var name = c.Name;
                     ImGui.SetNextItemWidth(-1);
                     if (ImGui.InputText("##n", ref name, 64))
-                    {
                         c.Name = name;
-                        changed = true;
-                    }
+                    changed |= Committed();
                     ImGui.TableNextColumn();
                     var g = Math.Max(0, Array.IndexOf(CharacterProfile.Genders, c.Gender));
                     ImGui.SetNextItemWidth(-1);
@@ -743,10 +859,8 @@ public sealed class ConfigWindow : Window
                     var notes = c.Notes;
                     ImGui.SetNextItemWidth(-1);
                     if (ImGui.InputTextWithHint("##o", L("e.g. her boyfriend, affectionate, calls her 'princess'"), ref notes, 200))
-                    {
                         c.Notes = notes;
-                        changed = true;
-                    }
+                    changed |= Committed();
                     ImGui.TableNextColumn();
                     if (Ui.GhostIconButton("rm", FontAwesomeIcon.TrashAlt, LF("Remove {0}", c.Name), Ui.Danger))
                         remove = i;
@@ -814,34 +928,35 @@ public sealed class ConfigWindow : Window
             {
                 var name = p.Name;
                 ImGui.SetNextItemWidth(Ui.S(200));
-                if (ImGui.InputText(L("Name"), ref name, 40)) { p.Name = name; changed = true; }
+                if (ImGui.InputText(L("Name"), ref name, 40)) p.Name = name;
+                changed |= Committed();
                 var url = p.BaseUrl;
                 ImGui.SetNextItemWidth(Ui.S(-90));
-                if (ImGui.InputText(L("Base URL"), ref url, 200)) { p.BaseUrl = url.Trim(); changed = true; }
+                if (ImGui.InputText(L("Base URL"), ref url, 200)) p.BaseUrl = url.Trim();
+                changed |= Committed();
                 var key = p.ApiKey;
                 ImGui.SetNextItemWidth(Ui.S(-90));
                 if (ImGui.InputText(L("API key"), ref key, 200, showKey ? ImGuiInputTextFlags.None : ImGuiInputTextFlags.Password))
-                {
                     p.ApiKey = key.Trim();
-                    changed = true;
-                }
+                changed |= Committed();
                 var model = p.Model;
                 ImGui.SetNextItemWidth(Ui.S(-200));
-                if (ImGui.InputText(L("Model"), ref model, 120)) { p.Model = model.Trim(); changed = true; }
+                if (ImGui.InputText(L("Model"), ref model, 120)) p.Model = model.Trim();
+                changed |= Committed();
                 ImGui.SameLine();
                 if (ImGui.SmallButton(L("List models")))
                 {
-                    aiTestResults[p.Id] = L("Loading models...");
+                    aiTestResults[p.Id] = (L("Loading models..."), StatusKind.Busy);
                     _ = llm.ListModelsAsync(p, default).ContinueWith(t =>
                     {
                         if (t.IsCompletedSuccessfully)
                         {
                             aiModels[p.Id] = t.Result;
-                            aiTestResults[p.Id] = LF("{0} models found", t.Result.Count);
+                            aiTestResults[p.Id] = (LF("{0} models found", t.Result.Count), StatusKind.Info);
                         }
                         else
                         {
-                            aiTestResults[p.Id] = L("Could not list models: ") + t.Exception?.GetBaseException().Message;
+                            aiTestResults[p.Id] = (L("Could not list models: ") + t.Exception?.GetBaseException().Message, StatusKind.Error);
                         }
                     });
                 }
@@ -858,9 +973,10 @@ public sealed class ConfigWindow : Window
 
                 if (Ui.Button(FontAwesomeIcon.Magic, L("Test")))
                 {
-                    aiTestResults[p.Id] = "Testing...";
+                    aiTestResults[p.Id] = (L("Testing..."), StatusKind.Busy);
                     _ = llm.TestAsync(p, default).ContinueWith(t => aiTestResults[p.Id] = t.IsCompletedSuccessfully
-                        ? t.Result : L("Failed: ") + t.Exception?.GetBaseException().Message);
+                        ? (t.Result.Text, t.Result.Ok ? StatusKind.Success : StatusKind.Error)
+                        : (L("Failed: ") + t.Exception?.GetBaseException().Message, StatusKind.Error));
                 }
                 ImGui.SameLine();
                 using (ImRaii.Disabled(i == 0))
@@ -870,8 +986,7 @@ public sealed class ConfigWindow : Window
                 if (Ui.Button(FontAwesomeIcon.TrashAlt, L("Remove")))
                     remove = i;
                 if (aiTestResults.TryGetValue(p.Id, out var res))
-                    Ui.Status(res, res.StartsWith("Failed") || res.StartsWith(L("Failed")) || res.StartsWith(L("Could not list models: ")) ? StatusKind.Error
-                                 : res.EndsWith("...") || res == L("Loading models...") ? StatusKind.Busy : StatusKind.Info);
+                    Ui.Status(res.Text, res.Kind);
                 var preset = LlmProvider.Presets.FirstOrDefault(x => x.Url == p.BaseUrl);
                 if (preset.Name != null)
                 {
@@ -908,7 +1023,7 @@ public sealed class ConfigWindow : Window
                 p.BaseUrl = x.Url;
                 p.Model = x.Model;
                 ImGui.SetClipboardText(x.KeyPage);
-                aiTestResults[p.Id] = LF("Key page copied to clipboard: {0}  - paste your key above, then Test.", x.KeyPage);
+                aiTestResults[p.Id] = (LF("Key page copied to clipboard: {0}  - paste your key above, then Test.", x.KeyPage), StatusKind.Info);
             }
             cfg.LlmProviders.Add(p);
             changed = true;
@@ -924,10 +1039,8 @@ public sealed class ConfigWindow : Window
             var temp = cfg.LlmTemperature;
             ImGui.SetNextItemWidth(Ui.S(150));
             if (ImGui.SliderFloat(L("Temperature"), ref temp, 0f, 1f, "%.2f"))
-            {
                 cfg.LlmTemperature = temp;
-                changed = true;
-            }
+            changed |= Committed();
             ImGuiComponents.HelpMarker(L("0.2-0.4 keeps translations faithful. Higher = freer, more creative wording."));
             if (!aiPromptLoaded)
             {
@@ -936,11 +1049,8 @@ public sealed class ConfigWindow : Window
             }
             Ui.MutedText(L("{target} is replaced by the target language. Keep the [[xx]] output rule."));
             if (ImGui.InputTextMultiline("##prompt", ref aiPrompt, 4000, new Vector2(-1, ImGui.GetTextLineHeight() * 10)))
-            {
                 cfg.LlmPrompt = aiPrompt.Trim() == LlmTranslator.DefaultPrompt.Trim() ? string.Empty : aiPrompt;
-                plugin.Translator.ClearCache();
-                changed = true;
-            }
+            changed |= Committed();
             if (ImGui.SmallButton(L("Reset prompt")))
             {
                 cfg.LlmPrompt = string.Empty;
@@ -970,8 +1080,10 @@ public sealed class ConfigWindow : Window
         Ui.Section(L("Glossary"), FontAwesomeIcon.Book, first: true);
         Ui.Hint(L("Your own translations for specific words: lore terms, nicknames, pet names, RP slang, " +
                           "how intimate or emotional words should be rendered... DeepL always uses these when it " +
-                          "knows the source language. They are uploaded to your DeepL account as glossaries " +
-                          "(one per direction and per key) automatically. DeepL only."));
+                          "knows the source language (they are uploaded to your DeepL account as glossaries, one per " +
+                          "direction and per key, automatically), and the AI providers get them as instructions."));
+        if (cfg.Engine == TranslationEngine.Google && cfg.LlmUsage == LlmUsage.Off)
+            Ui.Status(L("Google does not use the glossary: it only applies with DeepL or AI (Settings > Engine / AI)."), StatusKind.Warning);
         Ui.MutedText(LF("Status: {0}", plugin.Translator.DeepL.GlossaryStatus));
         if (Ui.Button(FontAwesomeIcon.Magic, L("Import recommended terms")))
         {
@@ -986,7 +1098,7 @@ public sealed class ConfigWindow : Window
             importResult = added == 0 ? L("Already imported.") : LF("{0} terms added.", added);
             changed = true;
         }
-        ImGuiComponents.HelpMarker(L("Endearments (amor > mon amour, mi amor > mein Schatz, babe > bébé / Schatz, " +
+        ImGuiComponents.HelpMarker(L("Endearments (mi amor > mon amour / mein Schatz, babe > bébé / Schatz, " +
                                    "mon cœur > sweetheart...) and official FFXIV job/term names between English and French " +
                                    "(Dark Knight <> Chevalier noir) and English and German (Dark Knight <> Dunkelritter, " +
                                    "Free Company <> Freie Gesellschaft...). " +
@@ -1073,8 +1185,16 @@ public sealed class ConfigWindow : Window
                     ImGui.AlignTextToFramePadding();
                     ImGui.TextUnformatted(e.Source);
                     ImGui.TableNextColumn();
-                    ImGui.AlignTextToFramePadding();
-                    ImGui.TextUnformatted(e.Target);
+                    var target = e.Target;
+                    ImGui.SetNextItemWidth(-1);
+                    if (ImGui.InputText("##t", ref target, 100))
+                        e.Target = target;
+                    if (Committed() && e.Target.Trim().Length > 0)
+                    {
+                        e.Target = e.Target.Trim();
+                        changed = true;
+                    }
+                    Ui.Tooltip(L("Click to edit the translation"));
                     ImGui.TableNextColumn();
                     if (Ui.GhostIconButton("rm", FontAwesomeIcon.TrashAlt, LF("Remove \"{0}\"", e.Source), Ui.Danger))
                         remove = i;
@@ -1102,7 +1222,7 @@ public sealed class ConfigWindow : Window
         if (detected)
         {
             ImGui.SameLine();
-            Ui.Badge("detected", Ui.Success);
+            Ui.Badge(L("detected"), Ui.Success);
         }
 
         var handled = cfg.TranslateHandledMessages;
@@ -1212,6 +1332,12 @@ public sealed class ConfigWindow : Window
                           tooltip: L("Every tip and tour offer will appear again when it makes sense.")))
                 plugin.Tutorial.ResetTips();
             Ui.MutedText(L("Also: /lb tour, /lb tour settings, /lb tips on|off|reset"));
+            var still = cfg.ReduceMotion;
+            if (ImGui.Checkbox(L("Reduce motion (no spinner or pulsing highlight)"), ref still))
+            {
+                cfg.ReduceMotion = still;
+                plugin.SaveConfig();
+            }
         }
         plugin.Tutorial.Anchor("config.help.tutorial");
     }
@@ -1220,5 +1346,78 @@ public sealed class ConfigWindow : Window
     {
         var i = Languages.All.ToList().FindIndex(l => l.Code == code);
         return i < 0 ? 0 : i;
+    }
+
+    private static List<(ushort Id, Vector4 Color)>? uiColors;
+
+    /// <summary>The game's text colours (UIColor sheet), loaded once.</summary>
+    private static List<(ushort Id, Vector4 Color)> UiColors()
+    {
+        if (uiColors != null)
+            return uiColors;
+        var list = new List<(ushort, Vector4)>();
+        var seen = new HashSet<uint>();
+        try
+        {
+            foreach (var row in Plugin.DataManager.GetExcelSheet<Lumina.Excel.Sheets.UIColor>())
+            {
+                var c = row.Dark; // RGBA, the colour used for chat text
+                if ((c & 0xFF) == 0 || row.RowId > ushort.MaxValue || !seen.Add(c))
+                    continue;
+                list.Add(((ushort)row.RowId, ToVector(c)));
+            }
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Warning(ex, "Could not read the UIColor sheet");
+        }
+        return uiColors = list;
+    }
+
+    private static Vector4 ToVector(uint rgba) =>
+        new(((rgba >> 24) & 0xFF) / 255f, ((rgba >> 16) & 0xFF) / 255f, ((rgba >> 8) & 0xFF) / 255f, 1f);
+
+    /// <summary>A swatch of the current game text colour; clicking opens a palette of all of them.</summary>
+    private static bool ColorPicker(string id, string label, ref ushort value)
+    {
+        var colors = UiColors();
+        var current = value;
+        var swatch = colors.FirstOrDefault(c => c.Id == current).Color;
+        var changed = false;
+        if (ImGui.ColorButton($"##{id}", swatch == default ? Ui.Muted : swatch, ImGuiColorEditFlags.NoTooltip, Ui.S(22, 22)))
+            ImGui.OpenPopup($"##{id}popup");
+        Ui.Tooltip(L("Pick a colour"));
+        ImGui.SameLine();
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted(label);
+
+        using var popup = ImRaii.Popup($"##{id}popup");
+        if (!popup)
+            return false;
+        if (colors.Count == 0)
+        {
+            Ui.MutedText(L("The game colours could not be read."));
+            return false;
+        }
+        var perRow = 16;
+        for (var i = 0; i < colors.Count; i++)
+        {
+            var (cid, color) = colors[i];
+            if (i % perRow != 0)
+                ImGui.SameLine(0, Ui.S(2));
+            using (ImRaii.PushColor(ImGuiCol.Border, Ui.Accent, cid == current))
+            using (ImRaii.PushStyle(ImGuiStyleVar.FrameBorderSize, cid == current ? Ui.S(2) : 0))
+            {
+                if (ImGui.ColorButton($"##{id}{cid}", color, ImGuiColorEditFlags.NoTooltip, Ui.S(18, 18)))
+                {
+                    value = cid;
+                    changed = true;
+                    ImGui.CloseCurrentPopup();
+                }
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip(LF("Colour {0}", cid));
+        }
+        return changed;
     }
 }
