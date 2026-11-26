@@ -112,7 +112,7 @@ for p in SOURCES:
 # Engine statuses stored in English and shown through L() (DeepL keys, AI providers).
 for v in ["not used yet", "OK", "invalid API key", "too many requests", "monthly quota used up", "empty response",
           "network error", "timed out"]: add(v)
-for p in ['Translation/LlmTranslator.cs']:
+for p in ['Translation/Engines/LlmTranslator.cs']:
     for m in re.finditer(r'new LlmFailure\(\s*"((?:[^"\\]|\\.)*)"', file(p)):
         add(m.group(1))
 # Language names (English, shown through L()).
@@ -128,7 +128,7 @@ def ok(v):
 def block(src, name):
     i = src.index(name); j = src.index('};', i)
     return src[i:j]
-mw = file('Windows/MainWindow.cs'); sw = file('Windows/SetupWizard.cs'); cw = file('Windows/ConfigWindow.cs')
+mw = file('Windows/Main/MainWindow.cs'); sw = file('Windows/Setup/SetupWizard.cs'); cw = file('Windows/Settings/ConfigWindow.cs')
 for src, name, step in [(mw,'SendChannels =',1),(sw,'ChannelPresets =',1),(sw,'StepNames =',1),(cw,'ChannelGroups =',1),(cw,'Formalities =',2),
                         (cw,'OutputChannels =',1)]:
     b = block(src, name)

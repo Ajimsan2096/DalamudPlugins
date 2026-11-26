@@ -16,38 +16,6 @@ public sealed record TranslationResult(string Original, string Text, Language So
 public sealed record TranslateRequestContext(string? History = null, IReadOnlyList<string>? Names = null);
 
 /// <summary>
-/// Which source languages incoming chat may be translated from: every language except the ones the user already
-/// understands, or only a chosen few.
-/// </summary>
-public sealed class LanguageFilter
-{
-    private readonly HashSet<string> skip;
-    private readonly HashSet<string>? only;
-
-    /// <param name="skip">Never translated (languages the user understands).</param>
-    /// <param name="only">When not null, only these are translated.</param>
-    public LanguageFilter(IEnumerable<string> skip, IEnumerable<string>? only)
-    {
-        this.skip = new HashSet<string>(skip.Select(s => s.ToUpperInvariant()));
-        this.only = only == null ? null : new HashSet<string>(only.Select(s => s.ToUpperInvariant()));
-        Key = (this.only == null ? "x:" + string.Join(",", this.skip.OrderBy(s => s)) : "o:" + string.Join(",", this.only.OrderBy(s => s)));
-    }
-
-    /// <summary>Stable text form, for the translation cache.</summary>
-    public string Key { get; }
-
-    /// <summary>True when a message written in <paramref name="code"/> may be translated. Unknown languages count as
-    /// "other": translated in "all except" mode, not in "only these" mode.</summary>
-    public bool Allows(string? code)
-    {
-        var c = string.IsNullOrWhiteSpace(code) || code == "??" ? null : code.ToUpperInvariant();
-        if (only != null)
-            return c != null && only.Contains(c) && !skip.Contains(c);
-        return c == null || !skip.Contains(c);
-    }
-}
-
-/// <summary>
 /// Picks the direction (A to B or B to A), calls the selected engine (falling back to the others when it fails
 /// or is paused), protects names/links, and caches results so repeated messages cost nothing.
 /// </summary>
@@ -73,9 +41,8 @@ public sealed class TranslationService : IDisposable
     private readonly SemaphoreSlim concurrency = new(3);
     private readonly CancellationTokenSource lifetime = new();
 
-    private readonly object cacheLock = new();
-    private readonly Dictionary<string, LinkedListNode<(string Key, TranslationResult? Value)>> cacheMap = new();
-    private readonly LinkedList<(string Key, TranslationResult? Value)> cacheOrder = new();
+    /// <summary>Recent results (null = "nothing to translate" is cached too): repeated lines cost nothing.</summary>
+    private readonly LruCache<string, TranslationResult?> cache = new(CacheCapacity);
     /// <summary>Requests in flight: the same line arriving twice at once (macros, "congrats!") is sent only once.</summary>
     private readonly ConcurrentDictionary<string, Task<TranslationResult?>> inflight = new();
 
@@ -171,7 +138,7 @@ public sealed class TranslationService : IDisposable
 
         // Context is deliberately not part of the key: same line, same translation (and fewer billed characters).
         var key = $"{engine.Name}|{cfg.RoleplayMode}|{forcedTarget?.Code}|{a.Code}|{b.Code}|{preferred.Code}|{filter?.Key}|{text}";
-        if (TryGetCached(key, out var cached))
+        if (cache.TryGet(key, out var cached))
             return Task.FromResult(cached);
 
         var task = inflight.GetOrAdd(key, k => RunAsync(k, engine, text, a, b, preferred, forcedTarget, filter, options));
@@ -190,7 +157,7 @@ public sealed class TranslationService : IDisposable
             {
                 var result = await TranslateUncachedAsync(engine, text, a, b, preferred, forcedTarget, filter, options, lifetime.Token)
                                  .ConfigureAwait(false);
-                AddCached(key, result);
+                cache.Add(key, result);
                 return result;
             }
             finally
@@ -432,47 +399,7 @@ public sealed class TranslationService : IDisposable
     private static Language Unknown(string code) =>
         new(string.IsNullOrEmpty(code) ? "??" : code, code, code, code, code.ToLowerInvariant());
 
-    private bool TryGetCached(string key, out TranslationResult? value)
-    {
-        lock (cacheLock)
-        {
-            if (cacheMap.TryGetValue(key, out var node))
-            {
-                cacheOrder.Remove(node);
-                cacheOrder.AddFirst(node);
-                value = node.Value.Value;
-                return true;
-            }
-        }
-        value = null;
-        return false;
-    }
-
-    private void AddCached(string key, TranslationResult? value)
-    {
-        lock (cacheLock)
-        {
-            if (cacheMap.ContainsKey(key))
-                return;
-            var node = cacheOrder.AddFirst((key, value));
-            cacheMap[key] = node;
-            if (cacheOrder.Count > CacheCapacity)
-            {
-                var last = cacheOrder.Last!;
-                cacheOrder.RemoveLast();
-                cacheMap.Remove(last.Value.Key);
-            }
-        }
-    }
-
-    public void ClearCache()
-    {
-        lock (cacheLock)
-        {
-            cacheMap.Clear();
-            cacheOrder.Clear();
-        }
-    }
+    public void ClearCache() => cache.Clear();
 
     public void Dispose()
     {
